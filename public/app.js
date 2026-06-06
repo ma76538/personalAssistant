@@ -9,6 +9,7 @@ const metricsEl = document.getElementById("metrics");
 const timelineEl = document.getElementById("timeline");
 const focusListEl = document.getElementById("focus-list");
 const tasksEl = document.getElementById("tasks");
+const kanbanEl = document.getElementById("kanban");
 const statusBarsEl = document.getElementById("status-bars");
 const energyEl = document.getElementById("energy");
 const lastUpdatedEl = document.getElementById("last-updated");
@@ -62,42 +63,13 @@ reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
 reminderSettingsFormEl.addEventListener("change", scheduleReminderSettingsSave);
 resetReminderSettingsEl.addEventListener("click", resetReminderSettings);
 
-tasksEl.addEventListener("click", async (event) => {
-  const button = event.target.closest("button");
-  if (!button) return;
-  const taskId = Number(button.dataset.id);
-  const task = state.tasks.find((item) => item.id === taskId);
-  if (!task) return;
+tasksEl.addEventListener("click", handleTaskButtonClick);
+kanbanEl.addEventListener("click", handleTaskButtonClick);
 
-  if (button.dataset.action === "edit") {
-    openEditor(task);
-    return;
-  }
-  if (button.dataset.action === "done") {
-    await requestJson(`/api/tasks/${taskId}/done`, { method: "POST" });
-    await loadDashboard();
-    return;
-  }
-  if (button.dataset.action === "cancel") {
-    await requestJson(`/api/tasks/${taskId}/cancel`, { method: "POST" });
-    await loadDashboard();
-  }
-});
-
-tasksEl.addEventListener("dragstart", (event) => {
-  const card = event.target.closest(".task-card");
-  if (!card) return;
-  draggedTaskId = Number(card.dataset.id);
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", String(draggedTaskId));
-  card.classList.add("dragging");
-});
-
-tasksEl.addEventListener("dragend", (event) => {
-  event.target.closest(".task-card")?.classList.remove("dragging");
-  tasksEl.querySelectorAll(".quadrant.drop-target").forEach((item) => item.classList.remove("drop-target"));
-  draggedTaskId = null;
-});
+tasksEl.addEventListener("dragstart", handleDragStart);
+kanbanEl.addEventListener("dragstart", handleDragStart);
+tasksEl.addEventListener("dragend", handleDragEnd);
+kanbanEl.addEventListener("dragend", handleDragEnd);
 
 tasksEl.addEventListener("dragover", (event) => {
   const quadrant = event.target.closest(".quadrant");
@@ -118,12 +90,79 @@ tasksEl.addEventListener("drop", async (event) => {
   const task = state.tasks.find((item) => item.id === draggedTaskId);
   if (!task) return;
   const important = quadrant.dataset.important === "true";
+  const urgent = quadrant.dataset.urgent === "true";
+  const payload = { priority: important ? 5 : 2, status: normalizeStatusValue(task.status) };
+  if (urgent && !task.deadline) {
+    payload.deadline = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+  }
   await requestJson(`/api/tasks/${task.id}`, {
     method: "PATCH",
-    body: JSON.stringify({ priority: important ? 5 : 2, status: normalizeStatusValue(task.status) })
+    body: JSON.stringify(payload)
   });
   await loadDashboard();
 });
+
+kanbanEl.addEventListener("dragover", (event) => {
+  const column = event.target.closest(".kanban-column");
+  if (!column || !draggedTaskId) return;
+  event.preventDefault();
+  column.classList.add("drop-target");
+});
+
+kanbanEl.addEventListener("dragleave", (event) => {
+  event.target.closest(".kanban-column")?.classList.remove("drop-target");
+});
+
+kanbanEl.addEventListener("drop", async (event) => {
+  const column = event.target.closest(".kanban-column");
+  if (!column || !draggedTaskId) return;
+  event.preventDefault();
+  column.classList.remove("drop-target");
+  const task = state.tasks.find((item) => item.id === draggedTaskId);
+  if (!task) return;
+  await requestJson(`/api/tasks/${task.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: column.dataset.status })
+  });
+  await loadDashboard();
+});
+
+async function handleTaskButtonClick(event) {
+  const button = event.target.closest("button");
+  if (!button) return;
+  const taskId = Number(button.dataset.id);
+  const task = state.tasks.find((item) => item.id === taskId);
+  if (!task) return;
+
+  if (button.dataset.action === "edit") {
+    openEditor(task);
+    return;
+  }
+  if (button.dataset.action === "done") {
+    await requestJson(`/api/tasks/${taskId}/done`, { method: "POST" });
+    await loadDashboard();
+    return;
+  }
+  if (button.dataset.action === "cancel") {
+    await requestJson(`/api/tasks/${taskId}/cancel`, { method: "POST" });
+    await loadDashboard();
+  }
+}
+
+function handleDragStart(event) {
+  const card = event.target.closest(".task-card");
+  if (!card) return;
+  draggedTaskId = Number(card.dataset.id);
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", String(draggedTaskId));
+  card.classList.add("dragging");
+}
+
+function handleDragEnd(event) {
+  event.target.closest(".task-card")?.classList.remove("dragging");
+  document.querySelectorAll(".drop-target").forEach((item) => item.classList.remove("drop-target"));
+  draggedTaskId = null;
+}
 
 taskFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -157,6 +196,7 @@ function render() {
   renderStatusBars();
   renderEnergy();
   renderTasks();
+  renderKanban();
   renderReminderSettings();
   lastUpdatedEl.textContent = `更新於 ${new Intl.DateTimeFormat("zh-Hant", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date())}`;
 }
@@ -266,17 +306,17 @@ function renderEnergy() {
 function renderTasks() {
   const quadrants = state.summary.quadrants || {};
   const config = [
-    ["urgent-important", "緊急重要", "立即處理"],
-    ["urgent-not-important", "緊急不重要", "快速處理或委派"],
-    ["not-urgent-important", "不緊急重要", "安排深度時間"],
-    ["not-urgent-not-important", "不緊急不重要", "延後或刪減"]
+    ["urgent-important", "緊急重要", "立即處理", true, true],
+    ["urgent-not-important", "緊急不重要", "快速處理或委派", true, false],
+    ["not-urgent-important", "不緊急重要", "安排深度時間", false, true],
+    ["not-urgent-not-important", "不緊急不重要", "延後或刪減", false, false]
   ];
 
   tasksEl.innerHTML = config
-    .map(([key, title, subtitle]) => {
+    .map(([key, title, subtitle, urgent, important]) => {
       const tasks = quadrants[key] || [];
       return `
-        <section class="quadrant ${key}" data-important="${key.includes("important") && !key.includes("not-important")}">
+        <section class="quadrant ${key}" data-urgent="${urgent}" data-important="${important}">
           <div class="quadrant-head">
             <div>
               <h3>${title}</h3>
@@ -290,6 +330,39 @@ function renderTasks() {
                 ? tasks.map(taskCard).join("")
                 : `<div class="empty small">暫無任務</div>`
             }
+          </div>
+        </section>
+      `;
+    })
+    .join("");
+}
+
+function renderKanban() {
+  const columns = [
+    ["pending", "待辦", "下一步要處理"],
+    ["in_progress", "進行中", "正在推進"],
+    ["done", "完成", "已完成工作"]
+  ];
+  const tasksByColumn = {
+    pending: state.tasks.filter((task) => ["pending", "scheduled"].includes(task.status)),
+    in_progress: state.tasks.filter((task) => task.status === "in_progress"),
+    done: state.tasks.filter((task) => task.status === "done")
+  };
+
+  kanbanEl.innerHTML = columns
+    .map(([status, title, subtitle]) => {
+      const tasks = tasksByColumn[status] || [];
+      return `
+        <section class="kanban-column ${status}" data-status="${status}">
+          <div class="kanban-head">
+            <div>
+              <h3>${title}</h3>
+              <p class="muted">${subtitle}</p>
+            </div>
+            <strong>${tasks.length}</strong>
+          </div>
+          <div class="kanban-list">
+            ${tasks.length ? tasks.map(taskCard).join("") : `<div class="empty small">暫無任務</div>`}
           </div>
         </section>
       `;

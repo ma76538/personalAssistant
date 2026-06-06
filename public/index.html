@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Personal Assistant Dashboard</title>
-    <link rel="stylesheet" href="./style.css?v=20260606-1" />
+    <link rel="stylesheet" href="./style.css?v=20260606-2" />
   </head>
   <body>
     <main class="shell">
@@ -61,7 +61,7 @@
         </section>
       </section>
 
-      <section class="panel">
+      <section class="panel matrix-panel">
         <div class="panel-head">
           <div>
             <p class="eyebrow">Matrix</p>
@@ -73,6 +73,17 @@
           </div>
         </div>
         <div class="quadrant-grid" id="tasks"></div>
+      </section>
+
+      <section class="panel kanban-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Workflow</p>
+            <h2>Trello 式工作清單</h2>
+          </div>
+          <p class="muted">拖拉任務到不同欄位即可改變狀態</p>
+        </div>
+        <div class="kanban-board" id="kanban"></div>
       </section>
 
       <section class="panel reminder-settings-panel">
@@ -220,6 +231,6 @@
       </form>
     </aside>
 
-    <script src="./app.js?v=20260606-1" type="module"></script>
+    <script src="./app.js?v=20260606-2" type="module"></script>
   </body>
 </html>
