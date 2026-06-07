@@ -102,5 +102,14 @@ describe("dashboard API", () => {
     const doneResponse = await fetch(`${baseUrl}/api/tasks/${created.task.id}/done`, { method: "POST" });
     expect(doneResponse.status).toBe(200);
     expect(repo.getTask(created.task.id)?.status).toBe("done");
+
+    const summaryResponse = await fetch(`${baseUrl}/api/summary`);
+    expect(summaryResponse.status).toBe(200);
+    const summary = (await summaryResponse.json()) as { completed: Array<{ id: number; title: string }> };
+    expect(summary.completed.some((task) => task.id === created.task.id)).toBe(true);
+
+    const deleteResponse = await fetch(`${baseUrl}/api/tasks/${created.task.id}`, { method: "DELETE" });
+    expect(deleteResponse.status).toBe(200);
+    expect(repo.getTask(created.task.id)).toBeNull();
   });
 });

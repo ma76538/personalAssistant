@@ -110,11 +110,25 @@ describe("pending actions", () => {
     });
 
     repo.markExternalTasksStatus("apple-reminders", ["completed-reminder"], "done");
-    repo.markMissingExternalTasksStatus("apple-reminders", ["active-reminder", "completed-reminder"], "cancelled");
+    repo.deleteExternalTasksBySourceIds("apple-reminders", ["deleted-reminder"]);
 
     expect(repo.getTask(active.id)?.status).toBe("pending");
     expect(repo.getTask(completed.id)?.status).toBe("done");
-    expect(repo.getTask(deleted.id)?.status).toBe("cancelled");
+    expect(repo.getTask(deleted.id)).toBeNull();
+    repo.close();
+  });
+
+  it("deletes unsourced active tasks when reminders are the source of truth", () => {
+    const repo = tempRepo();
+    const local = repo.addTask({ title: "本地臨時任務" });
+    const done = repo.addTask({ title: "本地已完成任務" });
+    repo.updateTask(done.id, { status: "done" });
+
+    const deleted = repo.deleteUnsourcedActiveTasks();
+
+    expect(deleted).toBe(1);
+    expect(repo.getTask(local.id)).toBeNull();
+    expect(repo.getTask(done.id)?.status).toBe("done");
     repo.close();
   });
 });

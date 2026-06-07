@@ -53,6 +53,18 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
         return;
       }
 
+      if (taskMatch && request.method === "DELETE") {
+        const taskId = Number(taskMatch[1]);
+        const deleted = repo.deleteTask(taskId);
+        if (!deleted) {
+          sendJson(response, { error: "Task not found" }, 404);
+          return;
+        }
+        reschedule(repo);
+        sendJson(response, { deleted: true });
+        return;
+      }
+
       const actionMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/(done|cancel)$/);
       if (actionMatch && request.method === "POST") {
         const taskId = Number(actionMatch[1]);
@@ -110,6 +122,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
       const todayEnd = endOfLocalDay(now).toISOString();
       const weekEnd = startOfNextWeek(now).toISOString();
       const prioritized = prioritizeTasks(tasks, now);
+      const completed = tasks.filter((task) => task.status === "done").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       sendJson(response, {
         total: tasks.length,
         active: tasks.filter((task) => !["done", "cancelled"].includes(task.status)).length,
@@ -117,6 +130,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
         overdue: tasks.filter((task) => task.deadline && task.status !== "done" && new Date(task.deadline) < now).length,
         today: repo.listScheduledBetween(todayStart, todayEnd),
         week: repo.listScheduledBetween(todayStart, weekEnd),
+        completed,
         topPriorities: prioritized.slice(0, 5),
         quadrants: groupQuadrants(prioritized),
         byEnergy: countBy(tasks, "energy"),

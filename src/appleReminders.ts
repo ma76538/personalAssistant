@@ -19,7 +19,7 @@ export type SyncResult = {
   listName: string;
   imported: number;
   completed: number;
-  cancelled: number;
+  deleted: number;
   items: AppleReminderItem[];
 };
 
@@ -77,6 +77,7 @@ export function syncAppleReminders(repo: AssistantRepository, listName = "提醒
   const activeSourceIds = activeItems.map((item) => item.id);
   const completedSourceIds = snapshot.tracked.filter((item) => item.exists && item.completed).map((item) => item.id);
   const knownSourceIds = [...new Set([...activeSourceIds, ...snapshot.tracked.filter((item) => item.exists).map((item) => item.id)])];
+  const deletedSourceIds = snapshot.tracked.filter((item) => !item.exists).map((item) => item.id);
 
   for (const item of activeItems) {
     repo.upsertExternalTask({
@@ -90,9 +91,9 @@ export function syncAppleReminders(repo: AssistantRepository, listName = "提醒
     });
   }
   const completed = repo.markExternalTasksStatus("apple-reminders", completedSourceIds, "done");
-  const cancelled = repo.markMissingExternalTasksStatus("apple-reminders", knownSourceIds, "cancelled");
+  const deleted = repo.deleteExternalTasksBySourceIds("apple-reminders", deletedSourceIds) + repo.deleteTasksMissingFromSource("apple-reminders", knownSourceIds) + repo.deleteUnsourcedActiveTasks();
 
-  return { listName, imported: activeSourceIds.length, completed, cancelled, items: activeItems };
+  return { listName, imported: activeSourceIds.length, completed, deleted, items: activeItems };
 }
 
 function mapPriority(priority: number | null): number {

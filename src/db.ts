@@ -172,6 +172,11 @@ export class AssistantRepository {
       .map((row) => this.mapTask(row as Record<string, unknown>));
   }
 
+  deleteTask(id: number): boolean {
+    const result = this.db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
+    return result.changes > 0;
+  }
+
   listScheduledBetween(startIso: string, endIso: string): Task[] {
     return this.db
       .prepare(
@@ -238,6 +243,30 @@ export class AssistantRepository {
            AND source_id IN (${placeholders})`
       )
       .run(status, nowIso(), source, ...sourceIds);
+    return result.changes;
+  }
+
+  deleteExternalTasksBySourceIds(source: string, sourceIds: string[]): number {
+    if (sourceIds.length === 0) {
+      return 0;
+    }
+    const placeholders = sourceIds.map(() => "?").join(",");
+    const result = this.db.prepare(`DELETE FROM tasks WHERE source = ? AND source_id IN (${placeholders})`).run(source, ...sourceIds);
+    return result.changes;
+  }
+
+  deleteTasksMissingFromSource(source: string, knownSourceIds: string[]): number {
+    if (knownSourceIds.length === 0) {
+      const result = this.db.prepare("DELETE FROM tasks WHERE source = ?").run(source);
+      return result.changes;
+    }
+    const placeholders = knownSourceIds.map(() => "?").join(",");
+    const result = this.db.prepare(`DELETE FROM tasks WHERE source = ? AND source_id NOT IN (${placeholders})`).run(source, ...knownSourceIds);
+    return result.changes;
+  }
+
+  deleteUnsourcedActiveTasks(): number {
+    const result = this.db.prepare("DELETE FROM tasks WHERE source IS NULL AND status NOT IN ('done', 'cancelled')").run();
     return result.changes;
   }
 
