@@ -165,6 +165,13 @@ export class AssistantRepository {
       .map((row) => this.mapTask(row as Record<string, unknown>));
   }
 
+  listExternalTasks(source: string): Task[] {
+    return this.db
+      .prepare("SELECT * FROM tasks WHERE source = ? ORDER BY updated_at DESC")
+      .all(source)
+      .map((row) => this.mapTask(row as Record<string, unknown>));
+  }
+
   listScheduledBetween(startIso: string, endIso: string): Task[] {
     return this.db
       .prepare(
@@ -216,6 +223,49 @@ export class AssistantRepository {
       )
       .run(next);
     return this.getTask(id)!;
+  }
+
+  markExternalTasksStatus(source: string, sourceIds: string[], status: Task["status"]): number {
+    if (sourceIds.length === 0) {
+      return 0;
+    }
+    const placeholders = sourceIds.map(() => "?").join(",");
+    const result = this.db
+      .prepare(
+        `UPDATE tasks
+         SET status = ?, scheduled_start = NULL, scheduled_end = NULL, updated_at = ?
+         WHERE source = ?
+           AND source_id IN (${placeholders})`
+      )
+      .run(status, nowIso(), source, ...sourceIds);
+    return result.changes;
+  }
+
+  markMissingExternalTasksStatus(source: string, knownSourceIds: string[], status: Task["status"]): number {
+    const timestamp = nowIso();
+    if (knownSourceIds.length === 0) {
+      const result = this.db
+        .prepare(
+          `UPDATE tasks
+           SET status = ?, scheduled_start = NULL, scheduled_end = NULL, updated_at = ?
+           WHERE source = ?
+             AND status NOT IN ('done', 'cancelled')`
+        )
+        .run(status, timestamp, source);
+      return result.changes;
+    }
+
+    const placeholders = knownSourceIds.map(() => "?").join(",");
+    const result = this.db
+      .prepare(
+        `UPDATE tasks
+         SET status = ?, scheduled_start = NULL, scheduled_end = NULL, updated_at = ?
+         WHERE source = ?
+           AND status NOT IN ('done', 'cancelled')
+           AND source_id NOT IN (${placeholders})`
+      )
+      .run(status, timestamp, source, ...knownSourceIds);
+    return result.changes;
   }
 
   applySchedule(plan: Array<{ taskId: number; scheduledStart: string; scheduledEnd: string }>): void {

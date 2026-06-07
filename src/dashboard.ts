@@ -151,7 +151,14 @@ const TaskInputSchema = z.object({
   context: z.string().trim().nullable().optional()
 });
 
-const TaskPatchSchema = TaskInputSchema.partial().extend({
+const TaskPatchSchema = z.object({
+  title: z.string().trim().min(1).optional(),
+  durationMinutes: z.number().int().positive().optional(),
+  deadline: z.string().datetime().nullable().optional(),
+  earliestStart: z.string().datetime().nullable().optional(),
+  priority: z.number().int().min(1).max(5).optional(),
+  energy: EnergySchema.optional(),
+  context: z.string().trim().nullable().optional(),
   status: TaskStatusSchema.optional()
 });
 

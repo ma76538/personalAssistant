@@ -90,4 +90,31 @@ describe("pending actions", () => {
     expect(repo.getTask(first.id)?.title).toBe("新標題");
     repo.close();
   });
+
+  it("reconciles completed and deleted external todo items", () => {
+    const repo = tempRepo();
+    const active = repo.upsertExternalTask({
+      source: "apple-reminders",
+      sourceId: "active-reminder",
+      title: "仍在 Reminder"
+    });
+    const completed = repo.upsertExternalTask({
+      source: "apple-reminders",
+      sourceId: "completed-reminder",
+      title: "已完成 Reminder"
+    });
+    const deleted = repo.upsertExternalTask({
+      source: "apple-reminders",
+      sourceId: "deleted-reminder",
+      title: "已刪除 Reminder"
+    });
+
+    repo.markExternalTasksStatus("apple-reminders", ["completed-reminder"], "done");
+    repo.markMissingExternalTasksStatus("apple-reminders", ["active-reminder", "completed-reminder"], "cancelled");
+
+    expect(repo.getTask(active.id)?.status).toBe("pending");
+    expect(repo.getTask(completed.id)?.status).toBe("done");
+    expect(repo.getTask(deleted.id)?.status).toBe("cancelled");
+    repo.close();
+  });
 });

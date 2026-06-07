@@ -88,6 +88,17 @@ describe("dashboard API", () => {
     expect(repo.getTask(created.task.id)?.title).toBe("後台編輯任務");
     expect(repo.getTask(created.task.id)?.durationMinutes).toBe(60);
 
+    const statusOnlyResponse = await fetch(`${baseUrl}/api/tasks/${created.task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "in_progress" })
+    });
+    expect(statusOnlyResponse.status).toBe(200);
+    expect(repo.getTask(created.task.id)?.status).toBe("in_progress");
+    expect(repo.getTask(created.task.id)?.title).toBe("後台編輯任務");
+    expect(repo.getTask(created.task.id)?.durationMinutes).toBe(60);
+    expect(repo.getTask(created.task.id)?.priority).toBe(4);
+
     const doneResponse = await fetch(`${baseUrl}/api/tasks/${created.task.id}/done`, { method: "POST" });
     expect(doneResponse.status).toBe(200);
     expect(repo.getTask(created.task.id)?.status).toBe("done");
