@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>個人排程助理</title>
-    <link rel="stylesheet" href="./style.css?v=20260607-1" />
+    <link rel="stylesheet" href="./style.css?v=20260607-2" />
   </head>
   <body>
     <div class="app-shell">
@@ -21,7 +21,7 @@
         <section class="status-strip"><div class="status-pill"><span class="pulse"></span><span id="last-updated">同步中</span></div><div class="status-pill" id="metrics"></div></section>
         <section id="matrix" class="matrix-grid"></section>
         <section id="completed-bin" class="completed-bin panel" aria-label="完成箱">
-          <div class="panel-head"><div><p class="eyebrow">Archive</p><h2>完成箱</h2></div><p class="muted">已完成項目集中放在這裡；拖回四象限會改回待定。</p></div>
+          <div class="panel-head"><div><p class="eyebrow">Archive</p><h2>完成箱</h2></div><button id="clear-completed" type="button">清空完成箱</button></div>
           <div id="completed-list" class="completed-list"></div>
         </section>
         <section id="timeline" class="lower-grid"><article class="panel"><div class="panel-head"><div><p class="eyebrow">Today</p><h2>今日時間線</h2></div><button id="refresh" type="button">刷新</button></div><div id="timeline-list" class="timeline"></div></article><article class="panel"><div class="panel-head"><div><p class="eyebrow">Focus</p><h2>今日先做</h2></div></div><div id="focus-list" class="focus-list"></div></article></section>
@@ -29,6 +29,6 @@
       </main>
     </div>
     <div id="drawer-backdrop" class="drawer-backdrop" hidden></div><aside id="drawer" class="drawer" aria-hidden="true"><form id="task-form"><div class="drawer-head"><div><p class="eyebrow">Editor</p><h2 id="drawer-title">新增任務</h2></div><button id="close-drawer" type="button">關閉</button></div><input id="task-id" type="hidden" /><label>任務標題<input id="title" required maxlength="120" /></label><div class="form-grid"><label>工時（分鐘）<input id="durationMinutes" type="number" min="1" step="5" required /></label><label>優先級<input id="priority" type="number" min="1" max="5" required /></label></div><div class="form-grid"><label>工作類型<select id="task-energy"><option value="high">專注工作</option><option value="medium">一般工作</option><option value="low">簡單行政</option></select></label><label>狀態<select id="task-status"><option value="pending">待定</option><option value="in_progress">進行中</option><option value="done">完成</option></select></label></div><label>Start day/time<input id="earliestStart" type="datetime-local" /></label><label>Due day/time<input id="deadline" type="datetime-local" /></label><label>情境<textarea id="context" rows="4"></textarea></label><p class="form-note">儲存後會自動重排未開始任務。</p><div class="drawer-actions"><button id="cancel-edit" type="button">取消</button><button class="primary" type="submit">儲存</button></div></form></aside>
-    <script src="./app.js?v=20260607-1" type="module"></script>
+    <script src="./app.js?v=20260607-2" type="module"></script>
   </body>
 </html>

@@ -112,4 +112,19 @@ describe("dashboard API", () => {
     expect(deleteResponse.status).toBe(200);
     expect(repo.getTask(created.task.id)).toBeNull();
   });
+
+  it("clears completed tasks", async () => {
+    const { repo, baseUrl } = createHarness();
+    const done = repo.addTask({ title: "已完成任務" });
+    const active = repo.addTask({ title: "未完成任務" });
+    repo.updateTask(done.id, { status: "done" });
+
+    const response = await fetch(`${baseUrl}/api/tasks/completed`, { method: "DELETE" });
+    const payload = (await response.json()) as { deleted: number };
+
+    expect(response.status).toBe(200);
+    expect(payload.deleted).toBe(1);
+    expect(repo.getTask(done.id)).toBeNull();
+    expect(repo.getTask(active.id)?.title).toBe("未完成任務");
+  });
 });

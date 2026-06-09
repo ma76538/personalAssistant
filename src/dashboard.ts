@@ -32,6 +32,13 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
         return;
       }
 
+      if (url.pathname === "/api/tasks/completed" && request.method === "DELETE") {
+        const deleted = repo.deleteTasksByStatus("done");
+        reschedule(repo);
+        sendJson(response, { deleted });
+        return;
+      }
+
       const taskMatch = url.pathname.match(/^\/api\/tasks\/(\d+)$/);
       if (taskMatch && request.method === "PATCH") {
         const taskId = Number(taskMatch[1]);

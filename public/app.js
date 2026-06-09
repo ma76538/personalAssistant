@@ -27,6 +27,7 @@ $("task-search").addEventListener("input", (event) => {
   render();
 });
 $("sync-todo").addEventListener("click", syncTodoList);
+$("clear-completed").addEventListener("click", clearCompletedBin);
 $("replan").addEventListener("click", async () => {
   await requestJson("/api/replan", { method: "POST" });
   await loadDashboard();
@@ -89,14 +90,18 @@ completedListEl.addEventListener("drop", async (event) => {
 
 taskFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const payload = formPayload();
-  const id = $("task-id").value;
-  await requestJson(id ? `/api/tasks/${id}` : "/api/tasks", {
-    method: id ? "PATCH" : "POST",
-    body: JSON.stringify(payload)
-  });
-  closeEditor();
-  await loadDashboard();
+  try {
+    const payload = formPayload();
+    const id = $("task-id").value;
+    await requestJson(id ? `/api/tasks/${id}` : "/api/tasks", {
+      method: id ? "PATCH" : "POST",
+      body: JSON.stringify(payload)
+    });
+    closeEditor();
+    await loadDashboard();
+  } catch (error) {
+    lastUpdatedEl.textContent = error instanceof Error ? `儲存失敗：${error.message}` : "儲存失敗";
+  }
 });
 
 async function syncTodoList() {
@@ -119,6 +124,12 @@ async function syncTodoList() {
   }
 }
 
+async function clearCompletedBin() {
+  const response = await requestJson("/api/tasks/completed", { method: "DELETE" });
+  await loadDashboard();
+  lastUpdatedEl.textContent = `已清空完成箱：刪除 ${response.deleted || 0} 項`;
+}
+
 async function handleTaskButtonClick(event) {
   const button = event.target.closest("button");
   if (!button) return;
@@ -128,12 +139,24 @@ async function handleTaskButtonClick(event) {
   if (!task) return;
   if (button.dataset.action === "edit") return openEditor(task);
   if (button.dataset.action === "delete") await requestJson(`/api/tasks/${id}`, { method: "DELETE" });
+  if (button.dataset.action === "restore") await restoreToUrgentImportant(task);
   if (button.dataset.action === "status") await updateTaskStatus(id, button.dataset.status);
   await loadDashboard();
 }
 
 async function updateTaskStatus(id, status) {
   await requestJson(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+}
+
+async function restoreToUrgentImportant(task) {
+  await requestJson(`/api/tasks/${task.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "pending",
+      priority: 5,
+      deadline: task.deadline || new Date(Date.now() + 3 * 86400000).toISOString()
+    })
+  });
 }
 
 function handleDragStart(event) {
@@ -202,16 +225,17 @@ function renderMatrix() {
       const tasks = filtered(quadrants[key] || []).slice(0, 8);
       return `<section class="matrix-card ${key}" data-urgent="${urgent}" data-important="${important}">
         <header class="matrix-head"><div><h2><span>${icon}</span>${title}</h2><p>${subtitle}</p></div><strong>${tasks.length}</strong></header>
-        <div class="matrix-list">${tasks.length ? tasks.map(taskRow).join("") : `<div class="drop-empty">拖拉任務到這裡</div>`}</div>
+        <div class="matrix-list">${tasks.length ? tasks.map((task, index) => taskRow(task, index + 1)).join("") : `<div class="drop-empty">拖拉任務到這裡</div>`}</div>
       </section>`;
     })
     .join("");
 }
 
-function taskRow(task) {
+function taskRow(task, rank) {
   const status = normalizeStatusValue(task.status);
   return `<article class="task-row priority-${task.priority}" draggable="true" data-id="${task.id}">
     <span class="priority-bar"></span>
+    <span class="task-rank">${rank}</span>
     <div class="task-main">
       <strong>${esc(task.title)}</strong>
       <div class="task-dates">
@@ -240,7 +264,7 @@ function completedTask(task) {
     <span class="priority-bar"></span>
     <div><strong>${esc(task.title)}</strong><p>已完成</p></div>
     <div class="task-side">
-      <button data-action="status" data-status="pending" data-id="${task.id}" type="button">移回待定</button>
+      <button data-action="restore" data-id="${task.id}" type="button">移回待定</button>
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
     </div>
   </article>`;

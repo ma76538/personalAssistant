@@ -177,6 +177,11 @@ export class AssistantRepository {
     return result.changes > 0;
   }
 
+  deleteTasksByStatus(status: Task["status"]): number {
+    const result = this.db.prepare("DELETE FROM tasks WHERE status = ?").run(status);
+    return result.changes;
+  }
+
   listScheduledBetween(startIso: string, endIso: string): Task[] {
     return this.db
       .prepare(
