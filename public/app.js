@@ -112,7 +112,7 @@ async function syncTodoList() {
   try {
     const payload = await requestJson("/api/sync/apple-reminders", {
       method: "POST",
-      body: JSON.stringify({ listName: $("todo-list-name").value.trim() || "提醒事項" })
+      body: JSON.stringify({ listName: $("todo-list-name").value.trim() || "全部" })
     });
     await loadDashboard();
     lastUpdatedEl.textContent = `已同步 ${payload.imported} 項，完成 ${payload.completed || 0} 項，刪除 ${payload.deleted || 0} 項`;

@@ -184,7 +184,7 @@ const TaskPatchSchema = z.object({
 });
 
 const SyncInputSchema = z.object({
-  listName: z.string().trim().min(1).default("提醒事項")
+  listName: z.string().trim().min(1).default("全部")
 });
 
 function sendJson(response: http.ServerResponse, payload: unknown, status = 200): void {
