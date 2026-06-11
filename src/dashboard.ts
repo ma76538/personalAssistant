@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import mime from "mime";
 import { z } from "zod";
 import { AssistantRepository } from "./db.js";
-import { syncAppleReminders, writeTaskToAppleReminder } from "./appleReminders.js";
+import { deleteAppleReminderForTask, syncAppleReminders, writeTaskToAppleReminder } from "./appleReminders.js";
 import { buildSchedule } from "./scheduler.js";
 import { prioritizeTasks } from "./prioritizer.js";
 import { endOfLocalDay, startOfLocalDay, startOfNextWeek } from "./time.js";
@@ -27,6 +27,10 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
       if (url.pathname === "/api/tasks" && request.method === "POST") {
         const input = TaskInputSchema.parse(await readJson(request));
         const task = repo.addTask(input);
+        const sourceId = writeTaskToAppleReminder(task);
+        if (sourceId) {
+          repo.updateTask(task.id, { source: "apple-reminders", sourceId });
+        }
         reschedule(repo);
         sendJson(response, { task: repo.getTask(task.id) }, 201);
         return;
@@ -67,11 +71,13 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
 
       if (taskMatch && request.method === "DELETE") {
         const taskId = Number(taskMatch[1]);
-        const deleted = repo.deleteTask(taskId);
-        if (!deleted) {
+        const current = repo.getTask(taskId);
+        if (!current) {
           sendJson(response, { error: "Task not found" }, 404);
           return;
         }
+        deleteAppleReminderForTask(current);
+        const deleted = repo.deleteTask(taskId);
         reschedule(repo);
         sendJson(response, { deleted: true });
         return;

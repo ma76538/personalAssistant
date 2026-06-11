@@ -1,5 +1,6 @@
 import { AssistantRepository } from "./db.js";
 import { formatSchedulePreview, formatTask } from "./format.js";
+import { writeTaskToAppleReminder } from "./appleReminders.js";
 import { buildSchedule } from "./scheduler.js";
 import { ParsedAction, ParsedTask, PendingAction, Task } from "./types.js";
 
@@ -76,6 +77,9 @@ export function applyPendingAction(repo: AssistantRepository, pending: PendingAc
           context: task.context
         })
       );
+      for (const task of created) {
+        syncTaskToAppleReminders(repo, task);
+      }
       const tasks = repo.listActiveTasks();
       repo.applySchedule(buildSchedule(tasks));
       const refreshed = created.map((task) => repo.getTask(task.id)!).map(formatTask).join("\n\n");
@@ -84,7 +88,7 @@ export function applyPendingAction(repo: AssistantRepository, pending: PendingAc
     case "modify": {
       const task = requireTarget(repo, parsed.task?.target);
       const patch = parsed.task || {};
-      repo.updateTask(task.id, {
+      const updated = repo.updateTask(task.id, {
         title: patch.title ?? task.title,
         durationMinutes: patch.durationMinutes ?? task.durationMinutes,
         deadline: patch.deadline ?? task.deadline,
@@ -96,24 +100,34 @@ export function applyPendingAction(repo: AssistantRepository, pending: PendingAc
         scheduledEnd: null,
         status: "pending"
       });
+      syncTaskToAppleReminders(repo, updated);
       repo.applySchedule(buildSchedule(repo.listActiveTasks()));
       return `已修改並更新排程：\n${formatTask(repo.getTask(task.id)!)}。`;
     }
     case "complete": {
       const task = requireTarget(repo, parsed.task?.target);
-      repo.updateTask(task.id, { status: "done" });
+      const updated = repo.updateTask(task.id, { status: "done", scheduledStart: null, scheduledEnd: null });
+      syncTaskToAppleReminders(repo, updated);
       repo.applySchedule(buildSchedule(repo.listActiveTasks()));
       return `已完成：#${task.id} ${task.title}。`;
     }
     case "cancel": {
       const task = requireTarget(repo, parsed.task?.target);
-      repo.updateTask(task.id, { status: "cancelled" });
+      const updated = repo.updateTask(task.id, { status: "cancelled", scheduledStart: null, scheduledEnd: null });
+      syncTaskToAppleReminders(repo, updated);
       repo.applySchedule(buildSchedule(repo.listActiveTasks()));
       return `已取消：#${task.id} ${task.title}。`;
     }
     case "replan":
       repo.applySchedule(pending.schedulePlan || buildSchedule(repo.listActiveTasks()));
       return "已套用新的未開始任務排程。";
+  }
+}
+
+function syncTaskToAppleReminders(repo: AssistantRepository, task: Task): void {
+  const sourceId = writeTaskToAppleReminder(task);
+  if (sourceId && sourceId !== task.sourceId) {
+    repo.updateTask(task.id, { source: "apple-reminders", sourceId });
   }
 }
 

@@ -242,6 +242,47 @@ let data = try JSONSerialization.data(withJSONObject: output, options: [])
 print(String(data: data, encoding: .utf8)!)
 `;
 
+const EVENTKIT_DELETE_SCRIPT = `
+import EventKit
+import Foundation
+
+let sourceId = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ""
+let store = EKEventStore()
+let accessSemaphore = DispatchSemaphore(value: 0)
+var granted = false
+var accessError: Error?
+
+if #available(macOS 14.0, *) {
+  store.requestFullAccessToReminders { didGrant, error in
+    granted = didGrant
+    accessError = error
+    accessSemaphore.signal()
+  }
+} else {
+  store.requestAccess(to: .reminder) { didGrant, error in
+    granted = didGrant
+    accessError = error
+    accessSemaphore.signal()
+  }
+}
+
+accessSemaphore.wait()
+if !granted {
+  throw NSError(domain: "PersonalAssistantReminders", code: 20, userInfo: [
+    NSLocalizedDescriptionKey: accessError?.localizedDescription ?? "Reminders delete access was not granted."
+  ])
+}
+
+var deleted = false
+if let reminder = store.calendarItem(withIdentifier: sourceId) as? EKReminder {
+  try store.remove(reminder, commit: true)
+  deleted = true
+}
+
+let data = try JSONSerialization.data(withJSONObject: ["deleted": deleted], options: [])
+print(String(data: data, encoding: .utf8)!)
+`;
+
 export function syncAppleReminders(repo: AssistantRepository, listName = "全部"): SyncResult {
   const trackedIds = repo
     .listExternalTasks("apple-reminders")
@@ -278,11 +319,11 @@ export function syncAppleReminders(repo: AssistantRepository, listName = "全部
 }
 
 export function writeTaskToAppleReminder(task: Task): string | null {
-  if (task.source !== "apple-reminders" || !task.sourceId) {
-    return null;
+  if (process.env.NODE_ENV === "test" || process.env.VITEST) {
+    return task.source === "apple-reminders" ? task.sourceId : null;
   }
   const payload = {
-    sourceId: task.sourceId,
+    sourceId: task.source === "apple-reminders" ? task.sourceId : null,
     title: task.title,
     notes: task.context,
     deadline: task.deadline,
@@ -297,6 +338,22 @@ export function writeTaskToAppleReminder(task: Task): string | null {
   });
   const result = JSON.parse(raw.trim() || "{}") as { sourceId?: string };
   return result.sourceId ?? null;
+}
+
+export function deleteAppleReminderForTask(task: Task): boolean {
+  if (process.env.NODE_ENV === "test" || process.env.VITEST) {
+    return false;
+  }
+  if (task.source !== "apple-reminders" || !task.sourceId) {
+    return false;
+  }
+  const raw = execFileSync("swift", ["-e", EVENTKIT_DELETE_SCRIPT, task.sourceId], {
+    encoding: "utf8",
+    timeout: 15000,
+    maxBuffer: 1024 * 1024
+  });
+  const result = JSON.parse(raw.trim() || "{}") as { deleted?: boolean };
+  return Boolean(result.deleted);
 }
 
 function mapQuadrant(listName: string): Quadrant | null {
