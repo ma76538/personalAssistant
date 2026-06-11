@@ -16,6 +16,7 @@ const reminderSettingsStatusEl = $("reminder-settings-status");
 
 let draggedTaskId = null;
 let pointerDrag = null;
+let lastMovedTaskId = null;
 let reminderSettingsSaveTimer = null;
 
 $("refresh").addEventListener("click", loadDashboard);
@@ -161,6 +162,7 @@ async function moveTaskToQuadrant(taskId, quadrant) {
     status: "pending"
   };
   await requestJson(`/api/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+  lastMovedTaskId = task.id;
   await loadDashboard();
   lastUpdatedEl.textContent = `已移動「${task.title}」到${quadrant.querySelector("h2")?.textContent?.trim() || "新象限"}`;
 }
@@ -252,13 +254,22 @@ function renderMatrix() {
 
   matrixEl.innerHTML = config
     .map(([key, icon, title, subtitle, urgent, important]) => {
-      const tasks = filtered(quadrants[key] || []).slice(0, 8);
+      const tasks = prioritizeVisibleTasks(filtered(quadrants[key] || []));
       return `<section class="matrix-card ${key}" data-quadrant="${key}" data-urgent="${urgent}" data-important="${important}">
         <header class="matrix-head"><div><h2><span>${icon}</span>${title}</h2><p>${subtitle}</p></div><strong>${tasks.length}</strong></header>
         <div class="matrix-list">${tasks.length ? tasks.map((task, index) => taskRow(task, index + 1)).join("") : `<div class="drop-empty">拖拉任務到這裡</div>`}</div>
       </section>`;
     })
     .join("");
+}
+
+function prioritizeVisibleTasks(tasks) {
+  if (!lastMovedTaskId) return tasks;
+  return [...tasks].sort((a, b) => {
+    if (a.id === lastMovedTaskId) return -1;
+    if (b.id === lastMovedTaskId) return 1;
+    return 0;
+  });
 }
 
 function taskRow(task, rank) {
