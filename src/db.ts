@@ -32,6 +32,7 @@ export class AssistantRepository {
         status TEXT NOT NULL DEFAULT 'pending',
         scheduled_start TEXT,
         scheduled_end TEXT,
+        quadrant TEXT,
         source TEXT,
         source_id TEXT,
         created_at TEXT NOT NULL,
@@ -64,6 +65,7 @@ export class AssistantRepository {
     `);
     this.ensureColumn("tasks", "source", "TEXT");
     this.ensureColumn("tasks", "source_id", "TEXT");
+    this.ensureColumn("tasks", "quadrant", "TEXT");
     this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_source ON tasks (source, source_id) WHERE source IS NOT NULL AND source_id IS NOT NULL");
   }
 
@@ -82,6 +84,7 @@ export class AssistantRepository {
     priority?: number;
     energy?: string;
     context?: string | null;
+    quadrant?: Task["quadrant"];
     source?: string | null;
     sourceId?: string | null;
   }): Task {
@@ -89,10 +92,10 @@ export class AssistantRepository {
     const statement = this.db.prepare(`
       INSERT INTO tasks (
         title, duration_minutes, deadline, earliest_start, priority, energy, context,
-        source, source_id, status, created_at, updated_at
+        quadrant, source, source_id, status, created_at, updated_at
       ) VALUES (
         @title, @durationMinutes, @deadline, @earliestStart, @priority, @energy, @context,
-        @source, @sourceId, 'pending', @createdAt, @updatedAt
+        @quadrant, @source, @sourceId, 'pending', @createdAt, @updatedAt
       )
     `);
     const result = statement.run({
@@ -103,6 +106,7 @@ export class AssistantRepository {
       priority: input.priority ?? 3,
       energy: input.energy ?? "medium",
       context: input.context ?? null,
+      quadrant: input.quadrant ?? null,
       source: input.source ?? null,
       sourceId: input.sourceId ?? null,
       createdAt: timestamp,
@@ -121,6 +125,7 @@ export class AssistantRepository {
     priority?: number;
     energy?: string;
     context?: string | null;
+    quadrant?: Task["quadrant"];
   }): Task {
     const existing = this.db
       .prepare("SELECT * FROM tasks WHERE source = ? AND source_id = ? LIMIT 1")
@@ -134,10 +139,11 @@ export class AssistantRepository {
     return this.updateTask(task.id, {
       title: input.title,
       durationMinutes: input.durationMinutes ?? task.durationMinutes,
-      deadline: input.deadline ?? task.deadline,
+      deadline: input.deadline === undefined ? task.deadline : input.deadline,
       priority: input.priority ?? task.priority,
       energy: (input.energy ?? task.energy) as Task["energy"],
-      context: input.context ?? task.context,
+      context: input.context === undefined ? task.context : input.context,
+      quadrant: input.quadrant ?? task.quadrant,
       status: task.status === "done" || task.status === "cancelled" ? task.status : "pending",
       scheduledStart: null,
       scheduledEnd: null,
@@ -226,6 +232,7 @@ export class AssistantRepository {
           status = @status,
           scheduled_start = @scheduledStart,
           scheduled_end = @scheduledEnd,
+          quadrant = @quadrant,
           source = @source,
           source_id = @sourceId,
           updated_at = @updatedAt
@@ -402,6 +409,7 @@ export class AssistantRepository {
       status: row.status as Task["status"],
       scheduledStart: row.scheduled_start ? String(row.scheduled_start) : null,
       scheduledEnd: row.scheduled_end ? String(row.scheduled_end) : null,
+      quadrant: row.quadrant ? (String(row.quadrant) as Task["quadrant"]) : null,
       source: row.source ? String(row.source) : null,
       sourceId: row.source_id ? String(row.source_id) : null,
       createdAt: String(row.created_at),

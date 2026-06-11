@@ -9,7 +9,7 @@ import { syncAppleReminders } from "./appleReminders.js";
 import { buildSchedule } from "./scheduler.js";
 import { prioritizeTasks } from "./prioritizer.js";
 import { endOfLocalDay, startOfLocalDay, startOfNextWeek } from "./time.js";
-import { EnergySchema, ReminderPolicySchema, TaskStatusSchema } from "./types.js";
+import { EnergySchema, QuadrantSchema, ReminderPolicySchema, TaskStatusSchema } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "../public");
@@ -169,6 +169,7 @@ const TaskInputSchema = z.object({
   earliestStart: z.string().datetime().nullable().optional(),
   priority: z.number().int().min(1).max(5).default(3),
   energy: EnergySchema.default("medium"),
+  quadrant: QuadrantSchema.nullable().optional(),
   context: z.string().trim().nullable().optional()
 });
 
@@ -179,6 +180,7 @@ const TaskPatchSchema = z.object({
   earliestStart: z.string().datetime().nullable().optional(),
   priority: z.number().int().min(1).max(5).optional(),
   energy: EnergySchema.optional(),
+  quadrant: QuadrantSchema.nullable().optional(),
   context: z.string().trim().nullable().optional(),
   status: TaskStatusSchema.optional()
 });

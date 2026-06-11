@@ -6,6 +6,9 @@ export type Energy = z.infer<typeof EnergySchema>;
 export const TaskStatusSchema = z.enum(["pending", "scheduled", "in_progress", "done", "cancelled"]);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
+export const QuadrantSchema = z.enum(["urgent-important", "urgent-not-important", "not-urgent-important", "not-urgent-not-important"]);
+export type Quadrant = z.infer<typeof QuadrantSchema>;
+
 export const IntentSchema = z.enum(["add", "modify", "complete", "cancel", "query_today", "query_week", "replan", "unknown"]);
 export type Intent = z.infer<typeof IntentSchema>;
 
@@ -43,6 +46,7 @@ export type Task = {
   status: TaskStatus;
   scheduledStart: string | null;
   scheduledEnd: string | null;
+  quadrant: Quadrant | null;
   source: string | null;
   sourceId: string | null;
   createdAt: string;

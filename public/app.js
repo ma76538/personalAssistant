@@ -61,6 +61,7 @@ matrixEl.addEventListener("drop", async (event) => {
   if (!task) return;
 
   const payload = {
+    quadrant: quadrant.dataset.quadrant,
     priority: quadrant.dataset.important === "true" ? 5 : 2,
     status: "pending"
   };
@@ -153,6 +154,7 @@ async function restoreToUrgentImportant(task) {
     method: "PATCH",
     body: JSON.stringify({
       status: "pending",
+      quadrant: "urgent-important",
       priority: 5,
       deadline: task.deadline || new Date(Date.now() + 3 * 86400000).toISOString()
     })
@@ -223,7 +225,7 @@ function renderMatrix() {
   matrixEl.innerHTML = config
     .map(([key, icon, title, subtitle, urgent, important]) => {
       const tasks = filtered(quadrants[key] || []).slice(0, 8);
-      return `<section class="matrix-card ${key}" data-urgent="${urgent}" data-important="${important}">
+      return `<section class="matrix-card ${key}" data-quadrant="${key}" data-urgent="${urgent}" data-important="${important}">
         <header class="matrix-head"><div><h2><span>${icon}</span>${title}</h2><p>${subtitle}</p></div><strong>${tasks.length}</strong></header>
         <div class="matrix-list">${tasks.length ? tasks.map((task, index) => taskRow(task, index + 1)).join("") : `<div class="drop-empty">拖拉任務到這裡</div>`}</div>
       </section>`;

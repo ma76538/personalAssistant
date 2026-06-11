@@ -70,4 +70,21 @@ describe("daily brief", () => {
     expect(byTitle.get("不緊急不重要")).toBe("not-urgent-not-important");
     repo.close();
   });
+
+  it("keeps a synced reminder in its source quadrant", () => {
+    const repo = tempRepo();
+    const task = repo.addTask({
+      title: "Reminders 清單指定不緊急重要",
+      priority: 5,
+      deadline: "2026-05-24T12:00:00.000Z",
+      quadrant: "not-urgent-important"
+    });
+
+    const [prioritized] = prioritizeTasks([task], new Date("2026-05-24T09:00:00.000Z"));
+
+    expect(prioritized.quadrant).toBe("not-urgent-important");
+    expect(prioritized.isUrgent).toBe(false);
+    expect(prioritized.isImportant).toBe(true);
+    repo.close();
+  });
 });

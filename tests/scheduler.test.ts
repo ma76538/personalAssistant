@@ -15,6 +15,7 @@ function task(overrides: Partial<Task>): Task {
     status: overrides.status ?? "pending",
     scheduledStart: overrides.scheduledStart ?? null,
     scheduledEnd: overrides.scheduledEnd ?? null,
+    quadrant: overrides.quadrant ?? null,
     source: overrides.source ?? null,
     sourceId: overrides.sourceId ?? null,
     createdAt: "2026-05-23T00:00:00.000Z",

@@ -21,14 +21,14 @@ function addPriority(task: Task, now: Date): PrioritizedTask {
   const statusScore = task.status === "in_progress" ? 25 : task.status === "scheduled" ? 10 : 0;
   const energyScore = task.energy === "high" ? 8 : task.energy === "medium" ? 4 : 1;
   const urgencyScore = task.priority * 12 + deadlineScore.score + statusScore + energyScore;
-  const isUrgent = deadlineScore.urgent;
-  const isImportant = task.priority >= 4;
+  const isUrgent = task.quadrant ? ["urgent-important", "urgent-not-important"].includes(task.quadrant) : deadlineScore.urgent;
+  const isImportant = task.quadrant ? ["urgent-important", "not-urgent-important"].includes(task.quadrant) : task.priority >= 4;
 
   return {
     ...task,
     urgencyScore,
     urgencyLabel: urgencyScore >= 95 ? "critical" : urgencyScore >= 70 ? "high" : urgencyScore >= 40 ? "normal" : "low",
-    quadrant: quadrantFor(isUrgent, isImportant),
+    quadrant: task.quadrant ?? quadrantFor(isUrgent, isImportant),
     isUrgent,
     isImportant,
     reason: deadlineScore.reason || `優先級 ${task.priority}，${energyLabel(task.energy)}`

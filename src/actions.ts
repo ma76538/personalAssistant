@@ -138,6 +138,7 @@ function fakeTask(task: ParsedTask, id: number, now: Date): Task {
     status: "pending",
     scheduledStart: null,
     scheduledEnd: null,
+    quadrant: null,
     source: null,
     sourceId: null,
     createdAt: now.toISOString(),

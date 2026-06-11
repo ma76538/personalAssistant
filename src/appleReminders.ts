@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { AssistantRepository } from "./db.js";
+import type { Quadrant } from "./types.js";
 
 export type AppleReminderItem = {
   id: string;
@@ -9,6 +10,7 @@ export type AppleReminderItem = {
   priority: number | null;
   completed: boolean;
   listName: string;
+  quadrant: Quadrant | null;
 };
 
 type AppleReminderSnapshot = {
@@ -30,7 +32,6 @@ import Foundation
 
 let requestedListName = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "全部"
 let trackedRaw = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "[]"
-let quadrantListNames = ["緊急重要", "緊要唔重要", "重要唔緊急", "唔急唔重要"]
 let store = EKEventStore()
 let accessSemaphore = DispatchSemaphore(value: 0)
 var granted = false
@@ -63,7 +64,7 @@ let selectedCalendars: [EKCalendar]
 if let requested = calendars.first(where: { $0.title == requestedListName }) {
   selectedCalendars = [requested]
 } else if requestedListName == "提醒事項" || requestedListName == "全部" || requestedListName.lowercased() == "all" {
-  selectedCalendars = calendars.filter { quadrantListNames.contains($0.title) }
+  selectedCalendars = calendars.filter { quadrantKey($0.title) != nil }
   if selectedCalendars.isEmpty {
     throw NSError(domain: "PersonalAssistantReminders", code: 2, userInfo: [
       NSLocalizedDescriptionKey: "No quadrant reminder lists found. Available lists: " + names.joined(separator: ", ")
@@ -89,6 +90,19 @@ func isoDate(_ components: DateComponents?) -> String? {
   return components.date.map { formatter.string(from: $0) }
 }
 
+func quadrantKey(_ title: String) -> String? {
+  let isNotImportant = title.contains("唔重要") || title.contains("不重要")
+  let isImportant = title.contains("重要") && !isNotImportant
+  let isNotUrgent = title.contains("唔急") || title.contains("不急") || title.contains("唔緊急") || title.contains("不緊急")
+  let isUrgent = (title.contains("緊急") || title.contains("緊要")) && !isNotUrgent
+
+  if isUrgent && isImportant { return "urgent-important" }
+  if isUrgent && isNotImportant { return "urgent-not-important" }
+  if isNotUrgent && isImportant { return "not-urgent-important" }
+  if isNotUrgent && isNotImportant { return "not-urgent-not-important" }
+  return nil
+}
+
 func reminderPayload(_ reminder: EKReminder) -> [String: Any] {
   return [
     "id": reminder.calendarItemIdentifier,
@@ -97,7 +111,8 @@ func reminderPayload(_ reminder: EKReminder) -> [String: Any] {
     "dueDate": isoDate(reminder.dueDateComponents) ?? NSNull(),
     "priority": reminder.priority,
     "completed": reminder.isCompleted,
-    "listName": reminder.calendar.title
+    "listName": reminder.calendar.title,
+    "quadrant": quadrantKey(reminder.calendar.title) ?? NSNull()
   ]
 }
 
@@ -150,16 +165,29 @@ export function syncAppleReminders(repo: AssistantRepository, listName = "全部
       source: "apple-reminders",
       sourceId: item.id,
       title: item.title,
-      deadline: item.dueDate ?? inferredDeadline(item.listName),
+      deadline: item.dueDate,
       priority: mapPriority(item.priority, item.listName),
       energy: "medium",
-      context: item.notes
+      context: item.notes,
+      quadrant: item.quadrant ?? mapQuadrant(item.listName)
     });
   }
   const completed = repo.markExternalTasksStatus("apple-reminders", completedSourceIds, "done");
   const deleted = repo.deleteExternalTasksBySourceIds("apple-reminders", deletedSourceIds) + repo.deleteTasksMissingFromSource("apple-reminders", knownSourceIds) + repo.deleteUnsourcedActiveTasks();
 
   return { listName, imported: activeSourceIds.length, completed, deleted, items: activeItems };
+}
+
+function mapQuadrant(listName: string): Quadrant | null {
+  const isNotImportant = listName.includes("唔重要") || listName.includes("不重要");
+  const isImportant = listName.includes("重要") && !isNotImportant;
+  const isNotUrgent = listName.includes("唔急") || listName.includes("不急") || listName.includes("唔緊急") || listName.includes("不緊急");
+  const isUrgent = (listName.includes("緊急") || listName.includes("緊要")) && !isNotUrgent;
+  if (isUrgent && isImportant) return "urgent-important";
+  if (isUrgent && isNotImportant) return "urgent-not-important";
+  if (isNotUrgent && isImportant) return "not-urgent-important";
+  if (isNotUrgent && isNotImportant) return "not-urgent-not-important";
+  return null;
 }
 
 function mapPriority(priority: number | null, listName = ""): number {
@@ -180,15 +208,4 @@ function mapPriority(priority: number | null, listName = ""): number {
     return 2;
   }
   return 3;
-}
-
-function inferredDeadline(listName: string): string | null {
-  if (isUrgentList(listName)) {
-    return new Date(Date.now() + 3 * 86400000).toISOString();
-  }
-  return null;
-}
-
-function isUrgentList(listName: string): boolean {
-  return (listName.includes("緊急") || listName.includes("緊要")) && !listName.includes("唔急") && !listName.includes("不急");
 }
