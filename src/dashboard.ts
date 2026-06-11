@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import mime from "mime";
 import { z } from "zod";
 import { AssistantRepository } from "./db.js";
-import { syncAppleReminders } from "./appleReminders.js";
+import { syncAppleReminders, writeTaskToAppleReminder } from "./appleReminders.js";
 import { buildSchedule } from "./scheduler.js";
 import { prioritizeTasks } from "./prioritizer.js";
 import { endOfLocalDay, startOfLocalDay, startOfNextWeek } from "./time.js";
@@ -50,11 +50,16 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
 
         const input = TaskPatchSchema.parse(await readJson(request));
         const nextStatus = input.status ?? current.status;
-        repo.updateTask(taskId, {
+        const shouldClearSchedule = ["pending", "scheduled", "done", "cancelled"].includes(nextStatus);
+        const updated = repo.updateTask(taskId, {
           ...input,
-          scheduledStart: nextStatus === "pending" || nextStatus === "scheduled" ? null : current.scheduledStart,
-          scheduledEnd: nextStatus === "pending" || nextStatus === "scheduled" ? null : current.scheduledEnd
+          scheduledStart: shouldClearSchedule ? null : current.scheduledStart,
+          scheduledEnd: shouldClearSchedule ? null : current.scheduledEnd
         });
+        const sourceId = writeTaskToAppleReminder(updated);
+        if (sourceId && sourceId !== updated.sourceId) {
+          repo.updateTask(taskId, { source: "apple-reminders", sourceId });
+        }
         reschedule(repo);
         sendJson(response, { task: repo.getTask(taskId) });
         return;
@@ -76,7 +81,8 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
       if (actionMatch && request.method === "POST") {
         const taskId = Number(actionMatch[1]);
         const status = actionMatch[2] === "done" ? "done" : "cancelled";
-        repo.updateTask(taskId, { status, scheduledStart: null, scheduledEnd: null });
+        const updated = repo.updateTask(taskId, { status, scheduledStart: null, scheduledEnd: null });
+        writeTaskToAppleReminder(updated);
         reschedule(repo);
         sendJson(response, { task: repo.getTask(taskId) });
         return;

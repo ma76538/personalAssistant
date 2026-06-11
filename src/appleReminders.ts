@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { AssistantRepository } from "./db.js";
-import type { Quadrant } from "./types.js";
+import type { Quadrant, Task } from "./types.js";
 
 export type AppleReminderItem = {
   id: string;
@@ -143,6 +143,105 @@ let data = try JSONSerialization.data(withJSONObject: output, options: [])
 print(String(data: data, encoding: .utf8)!)
 `;
 
+const EVENTKIT_WRITE_SCRIPT = `
+import EventKit
+import Foundation
+
+let raw = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "{}"
+let payloadData = Data(raw.utf8)
+guard let payload = try JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else {
+  throw NSError(domain: "PersonalAssistantReminders", code: 10, userInfo: [NSLocalizedDescriptionKey: "Invalid reminder payload"])
+}
+
+let store = EKEventStore()
+let accessSemaphore = DispatchSemaphore(value: 0)
+var granted = false
+var accessError: Error?
+
+if #available(macOS 14.0, *) {
+  store.requestFullAccessToReminders { didGrant, error in
+    granted = didGrant
+    accessError = error
+    accessSemaphore.signal()
+  }
+} else {
+  store.requestAccess(to: .reminder) { didGrant, error in
+    granted = didGrant
+    accessError = error
+    accessSemaphore.signal()
+  }
+}
+
+accessSemaphore.wait()
+if !granted {
+  throw NSError(domain: "PersonalAssistantReminders", code: 11, userInfo: [
+    NSLocalizedDescriptionKey: accessError?.localizedDescription ?? "Reminders write access was not granted."
+  ])
+}
+
+func quadrantKey(_ title: String) -> String? {
+  let isNotImportant = title.contains("唔重要") || title.contains("不重要")
+  let isImportant = title.contains("重要") && !isNotImportant
+  let isNotUrgent = title.contains("唔急") || title.contains("不急") || title.contains("唔緊急") || title.contains("不緊急")
+  let isUrgent = (title.contains("緊急") || title.contains("緊要")) && !isNotUrgent
+
+  if isUrgent && isImportant { return "urgent-important" }
+  if isUrgent && isNotImportant { return "urgent-not-important" }
+  if isNotUrgent && isImportant { return "not-urgent-important" }
+  if isNotUrgent && isNotImportant { return "not-urgent-not-important" }
+  return nil
+}
+
+func dateComponents(_ iso: String?) -> DateComponents? {
+  guard let iso, !iso.isEmpty else { return nil }
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  let fallback = ISO8601DateFormatter()
+  fallback.formatOptions = [.withInternetDateTime]
+  guard let date = formatter.date(from: iso) ?? fallback.date(from: iso) else { return nil }
+  return Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+}
+
+let sourceId = payload["sourceId"] as? String
+let reminder: EKReminder
+if let sourceId, let existing = store.calendarItem(withIdentifier: sourceId) as? EKReminder {
+  reminder = existing
+} else {
+  reminder = EKReminder(eventStore: store)
+}
+
+let calendars = store.calendars(for: .reminder)
+if let quadrant = payload["quadrant"] as? String,
+   let calendar = calendars.first(where: { quadrantKey($0.title) == quadrant }) {
+  reminder.calendar = calendar
+} else if reminder.calendar == nil, let calendar = calendars.first(where: { quadrantKey($0.title) != nil }) ?? store.defaultCalendarForNewReminders() {
+  reminder.calendar = calendar
+}
+
+reminder.title = (payload["title"] as? String) ?? reminder.title
+if payload.keys.contains("notes") {
+  reminder.notes = payload["notes"] as? String
+}
+reminder.dueDateComponents = dateComponents(payload["deadline"] as? String)
+if let status = payload["status"] as? String {
+  reminder.isCompleted = status == "done"
+}
+if let priority = payload["priority"] as? Int {
+  if priority >= 5 {
+    reminder.priority = 1
+  } else if priority >= 3 {
+    reminder.priority = 5
+  } else {
+    reminder.priority = 9
+  }
+}
+
+try store.save(reminder, commit: true)
+let output = ["sourceId": reminder.calendarItemIdentifier]
+let data = try JSONSerialization.data(withJSONObject: output, options: [])
+print(String(data: data, encoding: .utf8)!)
+`;
+
 export function syncAppleReminders(repo: AssistantRepository, listName = "全部"): SyncResult {
   const trackedIds = repo
     .listExternalTasks("apple-reminders")
@@ -176,6 +275,28 @@ export function syncAppleReminders(repo: AssistantRepository, listName = "全部
   const deleted = repo.deleteExternalTasksBySourceIds("apple-reminders", deletedSourceIds) + repo.deleteTasksMissingFromSource("apple-reminders", knownSourceIds) + repo.deleteUnsourcedActiveTasks();
 
   return { listName, imported: activeSourceIds.length, completed, deleted, items: activeItems };
+}
+
+export function writeTaskToAppleReminder(task: Task): string | null {
+  if (task.source !== "apple-reminders" || !task.sourceId) {
+    return null;
+  }
+  const payload = {
+    sourceId: task.sourceId,
+    title: task.title,
+    notes: task.context,
+    deadline: task.deadline,
+    priority: task.priority,
+    status: task.status,
+    quadrant: task.quadrant
+  };
+  const raw = execFileSync("swift", ["-e", EVENTKIT_WRITE_SCRIPT, JSON.stringify(payload)], {
+    encoding: "utf8",
+    timeout: 15000,
+    maxBuffer: 1024 * 1024
+  });
+  const result = JSON.parse(raw.trim() || "{}") as { sourceId?: string };
+  return result.sourceId ?? null;
 }
 
 function mapQuadrant(listName: string): Quadrant | null {

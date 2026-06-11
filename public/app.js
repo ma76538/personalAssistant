@@ -15,6 +15,7 @@ const reminderSettingsFormEl = $("reminder-settings-form");
 const reminderSettingsStatusEl = $("reminder-settings-status");
 
 let draggedTaskId = null;
+let pointerDrag = null;
 let reminderSettingsSaveTimer = null;
 
 $("refresh").addEventListener("click", loadDashboard);
@@ -57,20 +58,10 @@ matrixEl.addEventListener("drop", async (event) => {
   if (!quadrant || !draggedTaskId) return;
   event.preventDefault();
   quadrant.classList.remove("drop-target");
-  const task = state.tasks.find((item) => item.id === draggedTaskId);
-  if (!task) return;
-
-  const payload = {
-    quadrant: quadrant.dataset.quadrant,
-    priority: quadrant.dataset.important === "true" ? 5 : 2,
-    status: "pending"
-  };
-  if (quadrant.dataset.urgent === "true" && !task.deadline) {
-    payload.deadline = new Date(Date.now() + 3 * 86400000).toISOString();
-  }
-  await requestJson(`/api/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(payload) });
-  await loadDashboard();
+  await moveTaskToQuadrant(draggedTaskId, quadrant);
 });
+matrixEl.addEventListener("pointerdown", handlePointerDragStart);
+document.addEventListener("pointerup", handlePointerDragEnd);
 
 completedListEl.addEventListener("click", handleTaskButtonClick);
 completedListEl.addEventListener("dragstart", handleDragStart);
@@ -161,6 +152,19 @@ async function restoreToUrgentImportant(task) {
   });
 }
 
+async function moveTaskToQuadrant(taskId, quadrant) {
+  const task = state.tasks.find((item) => item.id === Number(taskId));
+  if (!task || !quadrant?.dataset?.quadrant) return;
+  const payload = {
+    quadrant: quadrant.dataset.quadrant,
+    priority: quadrant.dataset.important === "true" ? 5 : 2,
+    status: "pending"
+  };
+  await requestJson(`/api/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+  await loadDashboard();
+  lastUpdatedEl.textContent = `已移動「${task.title}」到${quadrant.querySelector("h2")?.textContent?.trim() || "新象限"}`;
+}
+
 function handleDragStart(event) {
   const card = event.target.closest(".task-row,.completed-task");
   if (!card) return;
@@ -174,6 +178,30 @@ function handleDragEnd(event) {
   event.target.closest(".task-row,.completed-task")?.classList.remove("dragging");
   document.querySelectorAll(".drop-target").forEach((item) => item.classList.remove("drop-target"));
   draggedTaskId = null;
+}
+
+function handlePointerDragStart(event) {
+  if (event.target.closest("button, input, select, textarea, a")) return;
+  const card = event.target.closest(".task-row,.completed-task");
+  if (!card) return;
+  pointerDrag = {
+    id: Number(card.dataset.id),
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+    card
+  };
+}
+
+async function handlePointerDragEnd(event) {
+  if (!pointerDrag) return;
+  const drag = pointerDrag;
+  pointerDrag = null;
+  const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+  if (distance < 12) return;
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".matrix-card");
+  if (!target) return;
+  await moveTaskToQuadrant(drag.id, target);
 }
 
 async function loadDashboard() {
