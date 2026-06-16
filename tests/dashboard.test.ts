@@ -127,4 +127,18 @@ describe("dashboard API", () => {
     expect(repo.getTask(done.id)).toBeNull();
     expect(repo.getTask(active.id)?.title).toBe("未完成任務");
   });
+
+  it("returns monthly calendar data for the dashboard", async () => {
+    const { repo, baseUrl } = createHarness();
+    repo.addTask({ title: "本月任務", quadrant: "urgent-important" });
+
+    const response = await fetch(`${baseUrl}/api/summary`);
+    const payload = (await response.json()) as { month: unknown[]; calendar: { accountEmail: string; connected: boolean; events: unknown[] } };
+
+    expect(response.status).toBe(200);
+    expect(Array.isArray(payload.month)).toBe(true);
+    expect(payload.calendar.accountEmail).toBe("kevin@region.mo");
+    expect(payload.calendar.connected).toBe(false);
+    expect(payload.calendar.events).toEqual([]);
+  });
 });

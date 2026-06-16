@@ -144,7 +144,7 @@ export class AssistantRepository {
       energy: (input.energy ?? task.energy) as Task["energy"],
       context: input.context === undefined ? task.context : input.context,
       quadrant: input.quadrant ?? task.quadrant,
-      status: task.status === "done" || task.status === "cancelled" ? task.status : "pending",
+      status: task.status === "done" || task.status === "cancelled" ? "pending" : task.status,
       scheduledStart: null,
       scheduledEnd: null,
       source: input.source,

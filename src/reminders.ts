@@ -15,7 +15,7 @@ type ReminderRule = {
 
 export async function runReminderTick(repo: AssistantRepository, chatId: number, send: ReminderSender, now = new Date()): Promise<void> {
   const policy = repo.getReminderPolicy();
-  const tasks = repo.listActiveTasks().filter((task) => task.scheduledStart && task.scheduledEnd);
+  const tasks = repo.listActiveTasks().filter((task) => task.quadrant === "urgent-important" && task.scheduledStart && task.scheduledEnd);
 
   for (const task of tasks) {
     for (const rule of reminderRules(task, policy)) {

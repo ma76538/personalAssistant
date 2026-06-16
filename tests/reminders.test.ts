@@ -13,7 +13,7 @@ function tempRepo(): AssistantRepository {
 describe("runReminderTick", () => {
   it("does not send the same reminder stage twice", async () => {
     const repo = tempRepo();
-    const task = repo.addTask({ title: "開會", durationMinutes: 30 });
+    const task = repo.addTask({ title: "開會", durationMinutes: 30, quadrant: "urgent-important" });
     repo.applySchedule([
       {
         taskId: task.id,
@@ -50,7 +50,7 @@ describe("runReminderTick", () => {
       quietHours: { enabled: false, start: "23:30", end: "08:00" },
       highPriority: { enabled: true, threshold: 4, extraBeforeStartMinutes: [60] }
     });
-    const task = repo.addTask({ title: "高優先任務", durationMinutes: 60, priority: 5 });
+    const task = repo.addTask({ title: "高優先任務", durationMinutes: 60, priority: 5, quadrant: "urgent-important" });
     repo.applySchedule([
       {
         taskId: task.id,
@@ -75,7 +75,7 @@ describe("runReminderTick", () => {
 
   it("suppresses reminder chasing during quiet hours", async () => {
     const repo = tempRepo();
-    const task = repo.addTask({ title: "夜間任務", durationMinutes: 60 });
+    const task = repo.addTask({ title: "夜間任務", durationMinutes: 60, quadrant: "urgent-important" });
     repo.applySchedule([
       {
         taskId: task.id,
@@ -90,6 +90,33 @@ describe("runReminderTick", () => {
     }, new Date("2026-05-23T23:40:00.000Z"));
 
     expect(sent).toHaveLength(0);
+    repo.close();
+  });
+
+  it("only sends reminders for urgent important tasks", async () => {
+    const repo = tempRepo();
+    const urgent = repo.addTask({ title: "緊急重要", durationMinutes: 30, quadrant: "urgent-important" });
+    const other = repo.addTask({ title: "不緊急重要", durationMinutes: 30, quadrant: "not-urgent-important" });
+    repo.applySchedule([
+      {
+        taskId: urgent.id,
+        scheduledStart: "2026-05-23T02:00:00.000Z",
+        scheduledEnd: "2026-05-23T02:30:00.000Z"
+      },
+      {
+        taskId: other.id,
+        scheduledStart: "2026-05-23T02:00:00.000Z",
+        scheduledEnd: "2026-05-23T02:30:00.000Z"
+      }
+    ]);
+    const sent: string[] = [];
+
+    await runReminderTick(repo, 1, async (_chatId, message) => {
+      sent.push(message);
+    }, new Date("2026-05-23T02:00:00.000Z"));
+
+    expect(sent.every((message) => message.includes("緊急重要"))).toBe(true);
+    expect(sent.some((message) => message.includes("不緊急重要"))).toBe(false);
     repo.close();
   });
 });

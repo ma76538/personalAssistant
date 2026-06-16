@@ -6,6 +6,7 @@ import mime from "mime";
 import { z } from "zod";
 import { AssistantRepository } from "./db.js";
 import { deleteAppleReminderForTask, syncAppleReminders, writeTaskToAppleReminder } from "./appleReminders.js";
+import { listAppleCalendarEvents } from "./appleCalendar.js";
 import { buildSchedule } from "./scheduler.js";
 import { prioritizeTasks } from "./prioritizer.js";
 import { endOfLocalDay, startOfLocalDay, startOfNextWeek } from "./time.js";
@@ -13,6 +14,7 @@ import { EnergySchema, QuadrantSchema, ReminderPolicySchema, TaskStatusSchema } 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "../public");
+const calendarAccountEmail = process.env.CALENDAR_ACCOUNT_EMAIL || "kevin@region.mo";
 
 export function startDashboardServer(repo: AssistantRepository, port: number): http.Server {
   const server = http.createServer(async (request, response) => {
@@ -140,6 +142,8 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
       const todayStart = startOfLocalDay(now).toISOString();
       const todayEnd = endOfLocalDay(now).toISOString();
       const weekEnd = startOfNextWeek(now).toISOString();
+      const monthStart = startOfMonth(now).toISOString();
+      const monthEnd = startOfNextMonth(now).toISOString();
       const prioritized = prioritizeTasks(tasks, now);
       const completed = tasks.filter((task) => task.status === "done").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       sendJson(response, {
@@ -149,6 +153,8 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
         overdue: tasks.filter((task) => task.deadline && task.status !== "done" && new Date(task.deadline) < now).length,
         today: repo.listScheduledBetween(todayStart, todayEnd),
         week: repo.listScheduledBetween(todayStart, weekEnd),
+        month: repo.listScheduledBetween(monthStart, monthEnd),
+        calendar: listAppleCalendarEvents(calendarAccountEmail, monthStart, monthEnd),
         completed,
         topPriorities: prioritized.slice(0, 5),
         quadrants: groupQuadrants(prioritized),
@@ -217,6 +223,14 @@ async function readJson(request: http.IncomingMessage): Promise<unknown> {
 
 function reschedule(repo: AssistantRepository): void {
   repo.applySchedule(buildSchedule(repo.listActiveTasks()));
+}
+
+function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
+}
+
+function startOfNextMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 1, 0, 0, 0, 0);
 }
 
 function serveStatic(pathname: string, response: http.ServerResponse): void {

@@ -11,6 +11,7 @@ export type AppleReminderItem = {
   completed: boolean;
   listName: string;
   quadrant: Quadrant | null;
+  statusTag: "pending" | "in_progress" | "done" | null;
 };
 
 type AppleReminderSnapshot = {
@@ -60,19 +61,10 @@ if !granted {
 
 let calendars = store.calendars(for: .reminder)
 let names = calendars.map { $0.title }
-let selectedCalendars: [EKCalendar]
-if let requested = calendars.first(where: { $0.title == requestedListName }) {
-  selectedCalendars = [requested]
-} else if requestedListName == "提醒事項" || requestedListName == "全部" || requestedListName.lowercased() == "all" {
-  selectedCalendars = calendars.filter { quadrantKey($0.title) != nil }
-  if selectedCalendars.isEmpty {
-    throw NSError(domain: "PersonalAssistantReminders", code: 2, userInfo: [
-      NSLocalizedDescriptionKey: "No quadrant reminder lists found. Available lists: " + names.joined(separator: ", ")
-    ])
-  }
-} else {
-  throw NSError(domain: "PersonalAssistantReminders", code: 3, userInfo: [
-    NSLocalizedDescriptionKey: "Reminder list not found: " + requestedListName + ". Available lists: " + names.joined(separator: ", ")
+let selectedCalendars = calendars.filter { quadrantKey($0.title) != nil }
+if selectedCalendars.isEmpty {
+  throw NSError(domain: "PersonalAssistantReminders", code: 2, userInfo: [
+    NSLocalizedDescriptionKey: "No quadrant reminder lists found. Available lists: " + names.joined(separator: ", ")
   ])
 }
 
@@ -91,28 +83,64 @@ func isoDate(_ components: DateComponents?) -> String? {
 }
 
 func quadrantKey(_ title: String) -> String? {
-  let isNotImportant = title.contains("唔重要") || title.contains("不重要")
-  let isImportant = title.contains("重要") && !isNotImportant
-  let isNotUrgent = title.contains("唔急") || title.contains("不急") || title.contains("唔緊急") || title.contains("不緊急")
-  let isUrgent = (title.contains("緊急") || title.contains("緊要")) && !isNotUrgent
+  let key = title
+    .replacingOccurrences(of: " ", with: "")
+    .replacingOccurrences(of: "　", with: "")
+  let aliases: [String: String] = [
+    "緊急重要": "urgent-important",
+    "緊要重要": "urgent-important",
+    "緊急不重要": "urgent-not-important",
+    "緊急唔重要": "urgent-not-important",
+    "緊要不重要": "urgent-not-important",
+    "緊要唔重要": "urgent-not-important",
+    "不緊急重要": "not-urgent-important",
+    "唔緊急重要": "not-urgent-important",
+    "不急重要": "not-urgent-important",
+    "唔急重要": "not-urgent-important",
+    "不緊急不重要": "not-urgent-not-important",
+    "不緊急唔重要": "not-urgent-not-important",
+    "唔緊急不重要": "not-urgent-not-important",
+    "唔緊急唔重要": "not-urgent-not-important",
+    "不急不重要": "not-urgent-not-important",
+    "唔急唔重要": "not-urgent-not-important"
+  ]
+  return aliases[key]
+}
 
-  if isUrgent && isImportant { return "urgent-important" }
-  if isUrgent && isNotImportant { return "urgent-not-important" }
-  if isNotUrgent && isImportant { return "not-urgent-important" }
-  if isNotUrgent && isNotImportant { return "not-urgent-not-important" }
+let statusTags: [String: String] = ["#待定": "pending", "#進行中": "in_progress", "#完成": "done"]
+
+func statusTag(_ text: String?) -> String? {
+  guard let text else { return nil }
+  for (tag, status) in statusTags {
+    if text.contains(tag) { return status }
+  }
   return nil
+}
+
+func cleanedNotes(_ text: String?) -> Any {
+  guard var text else { return NSNull() }
+  for tag in statusTags.keys {
+    text = text.replacingOccurrences(of: tag, with: "")
+  }
+  let cleaned = text
+    .components(separatedBy: .newlines)
+    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    .filter { !$0.isEmpty }
+    .joined(separator: "\\n")
+  return cleaned.isEmpty ? NSNull() : cleaned
 }
 
 func reminderPayload(_ reminder: EKReminder) -> [String: Any] {
   return [
     "id": reminder.calendarItemIdentifier,
     "title": reminder.title ?? "",
-    "notes": reminder.notes ?? NSNull(),
+    "notes": cleanedNotes(reminder.notes),
     "dueDate": isoDate(reminder.dueDateComponents) ?? NSNull(),
     "priority": reminder.priority,
     "completed": reminder.isCompleted,
     "listName": reminder.calendar.title,
-    "quadrant": quadrantKey(reminder.calendar.title) ?? NSNull()
+    "quadrant": quadrantKey(reminder.calendar.title) ?? NSNull(),
+    "statusTag": statusTag((reminder.notes ?? "") + " " + (reminder.title ?? "")) ?? NSNull()
   ]
 }
 
@@ -180,16 +208,28 @@ if !granted {
 }
 
 func quadrantKey(_ title: String) -> String? {
-  let isNotImportant = title.contains("唔重要") || title.contains("不重要")
-  let isImportant = title.contains("重要") && !isNotImportant
-  let isNotUrgent = title.contains("唔急") || title.contains("不急") || title.contains("唔緊急") || title.contains("不緊急")
-  let isUrgent = (title.contains("緊急") || title.contains("緊要")) && !isNotUrgent
-
-  if isUrgent && isImportant { return "urgent-important" }
-  if isUrgent && isNotImportant { return "urgent-not-important" }
-  if isNotUrgent && isImportant { return "not-urgent-important" }
-  if isNotUrgent && isNotImportant { return "not-urgent-not-important" }
-  return nil
+  let key = title
+    .replacingOccurrences(of: " ", with: "")
+    .replacingOccurrences(of: "　", with: "")
+  let aliases: [String: String] = [
+    "緊急重要": "urgent-important",
+    "緊要重要": "urgent-important",
+    "緊急不重要": "urgent-not-important",
+    "緊急唔重要": "urgent-not-important",
+    "緊要不重要": "urgent-not-important",
+    "緊要唔重要": "urgent-not-important",
+    "不緊急重要": "not-urgent-important",
+    "唔緊急重要": "not-urgent-important",
+    "不急重要": "not-urgent-important",
+    "唔急重要": "not-urgent-important",
+    "不緊急不重要": "not-urgent-not-important",
+    "不緊急唔重要": "not-urgent-not-important",
+    "唔緊急不重要": "not-urgent-not-important",
+    "唔緊急唔重要": "not-urgent-not-important",
+    "不急不重要": "not-urgent-not-important",
+    "唔急唔重要": "not-urgent-not-important"
+  ]
+  return aliases[key]
 }
 
 func dateComponents(_ iso: String?) -> DateComponents? {
@@ -200,6 +240,37 @@ func dateComponents(_ iso: String?) -> DateComponents? {
   fallback.formatOptions = [.withInternetDateTime]
   guard let date = formatter.date(from: iso) ?? fallback.date(from: iso) else { return nil }
   return Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+}
+
+let managedStatusTags = ["#待定", "#進行中", "#完成"]
+
+func statusLabel(_ status: String?) -> String? {
+  switch status {
+  case "done":
+    return "完成"
+  case "in_progress":
+    return "進行中"
+  case "pending", "scheduled":
+    return "待定"
+  default:
+    return nil
+  }
+}
+
+func notesWithStatusTag(_ notes: String?, _ status: String?) -> String? {
+  var cleaned = notes ?? ""
+  for tag in managedStatusTags {
+    cleaned = cleaned.replacingOccurrences(of: tag, with: "")
+  }
+  cleaned = cleaned
+    .components(separatedBy: .newlines)
+    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    .filter { !$0.isEmpty }
+    .joined(separator: "\\n")
+  guard let label = statusLabel(status) else {
+    return cleaned.isEmpty ? nil : cleaned
+  }
+  return cleaned.isEmpty ? "#" + label : cleaned + "\\n#" + label
 }
 
 let sourceId = payload["sourceId"] as? String
@@ -219,9 +290,7 @@ if let quadrant = payload["quadrant"] as? String,
 }
 
 reminder.title = (payload["title"] as? String) ?? reminder.title
-if payload.keys.contains("notes") {
-  reminder.notes = payload["notes"] as? String
-}
+reminder.notes = notesWithStatusTag(payload["notes"] as? String, payload["status"] as? String)
 reminder.dueDateComponents = dateComponents(payload["deadline"] as? String)
 if let status = payload["status"] as? String {
   reminder.isCompleted = status == "done"
@@ -301,7 +370,7 @@ export function syncAppleReminders(repo: AssistantRepository, listName = "全部
   const deletedSourceIds = snapshot.tracked.filter((item) => !item.exists).map((item) => item.id);
 
   for (const item of activeItems) {
-    repo.upsertExternalTask({
+    const task = repo.upsertExternalTask({
       source: "apple-reminders",
       sourceId: item.id,
       title: item.title,
@@ -311,6 +380,12 @@ export function syncAppleReminders(repo: AssistantRepository, listName = "全部
       context: item.notes,
       quadrant: item.quadrant ?? mapQuadrant(item.listName)
     });
+    if (item.statusTag !== statusTagForTask(task.status)) {
+      const sourceId = writeTaskToAppleReminder(task);
+      if (sourceId && sourceId !== task.sourceId) {
+        repo.updateTask(task.id, { source: "apple-reminders", sourceId });
+      }
+    }
   }
   const completed = repo.markExternalTasksStatus("apple-reminders", completedSourceIds, "done");
   const deleted = repo.deleteExternalTasksBySourceIds("apple-reminders", deletedSourceIds) + repo.deleteTasksMissingFromSource("apple-reminders", knownSourceIds) + repo.deleteUnsourcedActiveTasks();
@@ -357,23 +432,33 @@ export function deleteAppleReminderForTask(task: Task): boolean {
 }
 
 function mapQuadrant(listName: string): Quadrant | null {
-  const isNotImportant = listName.includes("唔重要") || listName.includes("不重要");
-  const isImportant = listName.includes("重要") && !isNotImportant;
-  const isNotUrgent = listName.includes("唔急") || listName.includes("不急") || listName.includes("唔緊急") || listName.includes("不緊急");
-  const isUrgent = (listName.includes("緊急") || listName.includes("緊要")) && !isNotUrgent;
-  if (isUrgent && isImportant) return "urgent-important";
-  if (isUrgent && isNotImportant) return "urgent-not-important";
-  if (isNotUrgent && isImportant) return "not-urgent-important";
-  if (isNotUrgent && isNotImportant) return "not-urgent-not-important";
-  return null;
+  const aliases: Record<string, Quadrant> = {
+    緊急重要: "urgent-important",
+    緊要重要: "urgent-important",
+    緊急不重要: "urgent-not-important",
+    緊急唔重要: "urgent-not-important",
+    緊要不重要: "urgent-not-important",
+    緊要唔重要: "urgent-not-important",
+    不緊急重要: "not-urgent-important",
+    唔緊急重要: "not-urgent-important",
+    不急重要: "not-urgent-important",
+    唔急重要: "not-urgent-important",
+    不緊急不重要: "not-urgent-not-important",
+    不緊急唔重要: "not-urgent-not-important",
+    唔緊急不重要: "not-urgent-not-important",
+    唔緊急唔重要: "not-urgent-not-important",
+    不急不重要: "not-urgent-not-important",
+    唔急唔重要: "not-urgent-not-important"
+  };
+  return aliases[listName.replaceAll(/\s/g, "")] ?? null;
 }
 
 function mapPriority(priority: number | null, listName = ""): number {
-  const normalized = listName.toLowerCase();
-  if (normalized.includes("重要") && !normalized.includes("唔重要") && !normalized.includes("不重要")) {
+  const quadrant = mapQuadrant(listName);
+  if (quadrant === "urgent-important" || quadrant === "not-urgent-important") {
     return 5;
   }
-  if (normalized.includes("唔重要") || normalized.includes("不重要")) {
+  if (quadrant === "urgent-not-important" || quadrant === "not-urgent-not-important") {
     return 2;
   }
   if (priority === 1) {
@@ -386,4 +471,11 @@ function mapPriority(priority: number | null, listName = ""): number {
     return 2;
   }
   return 3;
+}
+
+function statusTagForTask(status: Task["status"]): AppleReminderItem["statusTag"] {
+  if (status === "done") return "done";
+  if (status === "in_progress") return "in_progress";
+  if (status === "pending" || status === "scheduled") return "pending";
+  return null;
 }

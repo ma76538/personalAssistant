@@ -2,9 +2,12 @@ const state = { tasks: [], summary: null, reminderPolicy: null, search: "" };
 const $ = (id) => document.getElementById(id);
 
 const matrixEl = $("matrix");
+const quickWinsListEl = $("quick-wins-list");
+const quickWinsCountEl = $("quick-wins-count");
+const calendarBoardEl = $("calendar-board");
+const calendarStatusEl = $("calendar-status");
 const completedListEl = $("completed-list");
 const metricsEl = $("metrics");
-const timelineEl = $("timeline-list");
 const focusListEl = $("focus-list");
 const lastUpdatedEl = $("last-updated");
 const drawerEl = $("drawer");
@@ -17,6 +20,7 @@ const reminderSettingsStatusEl = $("reminder-settings-status");
 let draggedTaskId = null;
 let pointerDrag = null;
 let lastMovedTaskId = null;
+let lastDueWarningTaskId = null;
 let reminderSettingsSaveTimer = null;
 
 $("refresh").addEventListener("click", loadDashboard);
@@ -28,12 +32,7 @@ $("task-search").addEventListener("input", (event) => {
   state.search = event.target.value.trim().toLowerCase();
   render();
 });
-$("sync-todo").addEventListener("click", syncTodoList);
 $("clear-completed").addEventListener("click", clearCompletedBin);
-$("replan").addEventListener("click", async () => {
-  await requestJson("/api/replan", { method: "POST" });
-  await loadDashboard();
-});
 reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
 reminderSettingsFormEl.addEventListener("change", scheduleReminderSettingsSave);
 $("reset-reminder-settings").addEventListener("click", resetReminderSettings);
@@ -63,6 +62,8 @@ matrixEl.addEventListener("drop", async (event) => {
 });
 matrixEl.addEventListener("pointerdown", handlePointerDragStart);
 document.addEventListener("pointerup", handlePointerDragEnd);
+
+quickWinsListEl.addEventListener("click", handleTaskButtonClick);
 
 completedListEl.addEventListener("click", handleTaskButtonClick);
 completedListEl.addEventListener("dragstart", handleDragStart);
@@ -96,26 +97,6 @@ taskFormEl.addEventListener("submit", async (event) => {
     lastUpdatedEl.textContent = error instanceof Error ? `儲存失敗：${error.message}` : "儲存失敗";
   }
 });
-
-async function syncTodoList() {
-  const button = $("sync-todo");
-  const oldText = button.textContent;
-  button.textContent = "同步中";
-  button.disabled = true;
-  try {
-    const payload = await requestJson("/api/sync/apple-reminders", {
-      method: "POST",
-      body: JSON.stringify({ listName: $("todo-list-name").value.trim() || "全部" })
-    });
-    await loadDashboard();
-    lastUpdatedEl.textContent = `已同步 ${payload.imported} 項，完成 ${payload.completed || 0} 項，刪除 ${payload.deleted || 0} 項`;
-  } catch (error) {
-    lastUpdatedEl.textContent = error instanceof Error ? error.message : "同步失敗";
-  } finally {
-    button.textContent = oldText;
-    button.disabled = false;
-  }
-}
 
 async function clearCompletedBin() {
   const response = await requestJson("/api/tasks/completed", { method: "DELETE" });
@@ -156,15 +137,21 @@ async function restoreToUrgentImportant(task) {
 async function moveTaskToQuadrant(taskId, quadrant) {
   const task = state.tasks.find((item) => item.id === Number(taskId));
   if (!task || !quadrant?.dataset?.quadrant) return;
+  const targetQuadrant = quadrant.dataset.quadrant;
   const payload = {
-    quadrant: quadrant.dataset.quadrant,
+    quadrant: targetQuadrant,
     priority: quadrant.dataset.important === "true" ? 5 : 2,
     status: "pending"
   };
   await requestJson(`/api/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(payload) });
   lastMovedTaskId = task.id;
+  lastDueWarningTaskId = isUrgentQuadrant(targetQuadrant) && !task.deadline ? task.id : null;
   await loadDashboard();
-  lastUpdatedEl.textContent = `已移動「${task.title}」到${quadrant.querySelector("h2")?.textContent?.trim() || "新象限"}`;
+  if (lastDueWarningTaskId) {
+    lastUpdatedEl.textContent = `「${task.title}」已移到緊急象限，請補回 Due day。`;
+  } else {
+    lastUpdatedEl.textContent = `已移動「${task.title}」到${quadrant.querySelector("h2")?.textContent?.trim() || "新象限"}`;
+  }
 }
 
 function handleDragStart(event) {
@@ -220,9 +207,10 @@ async function loadDashboard() {
 
 function render() {
   renderMetrics();
+  renderQuickWins();
   renderMatrix();
+  renderCalendar();
   renderCompletedBin();
-  renderTimeline();
   renderFocusList();
   renderReminderSettings();
   lastUpdatedEl.textContent = `更新於 ${new Intl.DateTimeFormat("zh-Hant", {
@@ -240,7 +228,30 @@ function filtered(tasks) {
 
 function renderMetrics() {
   const summary = state.summary || {};
-  metricsEl.innerHTML = `<span>全部 ${summary.total || 0}</span><span>進行中 ${summary.byStatus?.in_progress || 0}</span><span>今日 ${summary.today?.length || 0}</span><span class="danger">逾期 ${summary.overdue || 0}</span>`;
+  const total = summary.total || 0;
+  const active = summary.active || 0;
+  const inProgress = summary.byStatus?.in_progress || 0;
+  const today = summary.today?.length || 0;
+  const overdue = summary.overdue || 0;
+  const done = summary.done || 0;
+  const cards = [
+    ["total", "全部", total, "任務庫", total ? 100 : 0],
+    ["progress", "進行中", inProgress, `${active} 個未完成`, ratio(inProgress, Math.max(active, 1))],
+    ["today", "今日", today, "已安排", ratio(today, Math.max(active, 1))],
+    ["overdue", "逾期", overdue, overdue ? "需要處理" : "目前清爽", ratio(overdue, Math.max(active, 1))]
+  ];
+  metricsEl.innerHTML = `<div class="metrics-board">
+    ${cards
+      .map(
+        ([tone, label, value, caption, progress]) => `<article class="metric-card ${tone}">
+          <div class="metric-icon">${metricIcon(tone)}</div>
+          <div class="metric-copy"><span>${label}</span><strong>${value}</strong><small>${caption}</small></div>
+          <div class="metric-ring" style="--value:${Math.max(4, Math.min(100, progress))}%"><b>${progress}%</b></div>
+        </article>`
+      )
+      .join("")}
+    <article class="metric-card done"><div class="metric-icon">✓</div><div class="metric-copy"><span>完成</span><strong>${done}</strong><small>已歸檔</small></div><div class="metric-spark"><i style="width:${Math.max(8, ratio(done, Math.max(total, 1)))}%"></i></div></article>
+  </div>`;
 }
 
 function renderMatrix() {
@@ -254,13 +265,36 @@ function renderMatrix() {
 
   matrixEl.innerHTML = config
     .map(([key, icon, title, subtitle, urgent, important]) => {
-      const tasks = prioritizeVisibleTasks(filtered(quadrants[key] || []));
+      const tasks = prioritizeVisibleTasks(filtered(quadrants[key] || []).filter((task) => !isQuickWin(task)));
       return `<section class="matrix-card ${key}" data-quadrant="${key}" data-urgent="${urgent}" data-important="${important}">
         <header class="matrix-head"><div><h2><span>${icon}</span>${title}</h2><p>${subtitle}</p></div><strong>${tasks.length}</strong></header>
         <div class="matrix-list">${tasks.length ? tasks.map((task, index) => taskRow(task, index + 1)).join("") : `<div class="drop-empty">拖拉任務到這裡</div>`}</div>
       </section>`;
     })
     .join("");
+}
+
+function renderQuickWins() {
+  const tasks = filtered(state.tasks).filter((task) => isQuickWin(task));
+  quickWinsCountEl.textContent = String(tasks.length);
+  quickWinsListEl.innerHTML = tasks.length
+    ? tasks.map(quickWinRow).join("")
+    : `<div class="drop-empty">沒有 2 分鐘內可完成的任務。</div>`;
+}
+
+function quickWinRow(task) {
+  return `<article class="quick-task priority-${task.priority}" data-id="${task.id}">
+    <span class="priority-bar"></span>
+    <div class="quick-task-main">
+      <strong>${esc(task.title)}</strong>
+      <small>${task.deadline ? `Due ${shortMonthDay(task.deadline)}` : "立即處理的小任務"}</small>
+    </div>
+    <button class="quick-done" data-action="status" data-status="done" data-id="${task.id}" type="button">完成</button>
+  </article>`;
+}
+
+function isQuickWin(task) {
+  return task.durationMinutes <= 2 && !["done", "cancelled"].includes(task.status);
 }
 
 function prioritizeVisibleTasks(tasks) {
@@ -274,23 +308,35 @@ function prioritizeVisibleTasks(tasks) {
 
 function taskRow(task, rank) {
   const status = normalizeStatusValue(task.status);
-  return `<article class="task-row priority-${task.priority}" draggable="true" data-id="${task.id}">
+  const urgentMissingDue = isUrgentTask(task) && !task.deadline;
+  const needsDue = urgentMissingDue || lastDueWarningTaskId === task.id;
+  const startMarkup = task.earliestStart ? `<span>Start day ${shortDate(task.earliestStart)}</span>` : "";
+  return `<article class="task-row priority-${task.priority} ${needsDue ? "needs-due" : ""}" draggable="true" data-id="${task.id}">
     <span class="priority-bar"></span>
     <span class="task-rank">${rank}</span>
     <div class="task-main">
       <strong>${esc(task.title)}</strong>
-      <div class="task-dates">
-        ${task.earliestStart ? `<span>Start day ${shortDate(task.earliestStart)}</span>` : ""}
-        ${task.deadline ? `<span>Due day ${shortDate(task.deadline)}</span>` : ""}
-      </div>
+      ${startMarkup ? `<div class="task-dates">${startMarkup}</div>` : ""}
+      ${needsDue ? `<p class="due-warning">緊急任務必須加 Due day</p>` : ""}
     </div>
     <div class="matrix-status-actions" aria-label="改變任務狀態">
+      ${dueChip(task, needsDue)}
       <button class="${status === "pending" ? "active" : ""}" data-action="status" data-status="pending" data-id="${task.id}" type="button">待定</button>
       <button class="${status === "in_progress" ? "active" : ""}" data-action="status" data-status="in_progress" data-id="${task.id}" type="button">進行中</button>
       <button data-action="status" data-status="done" data-id="${task.id}" type="button">完成</button>
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
     </div>
   </article>`;
+}
+
+function dueChip(task, needsDue = false) {
+  if (task.deadline) {
+    return `<button class="due-chip" data-action="edit" data-id="${task.id}" type="button" title="編輯 Due day">${shortMonthDay(task.deadline)}</button>`;
+  }
+  if (needsDue) {
+    return `<button class="due-chip missing" data-action="edit" data-id="${task.id}" type="button" title="補回 Due day">加 Due</button>`;
+  }
+  return "";
 }
 
 function renderCompletedBin() {
@@ -311,11 +357,31 @@ function completedTask(task) {
   </article>`;
 }
 
-function renderTimeline() {
-  const today = state.summary?.today || [];
-  timelineEl.innerHTML = today.length
-    ? today.map((task) => `<article class="timeline-item"><span>${timeRange(task.scheduledStart, task.scheduledEnd)}</span><strong>${esc(task.title)}</strong></article>`).join("")
-    : `<div class="empty">今天還沒有安排。</div>`;
+function renderCalendar() {
+  const days = calendarMonthDays(new Date());
+  const monthTasks = state.summary?.month || [];
+  const calendar = state.summary?.calendar || { accountEmail: "kevin@region.mo", connected: false, events: [] };
+  calendarStatusEl.textContent = calendar.connected
+    ? `已連結 ${calendar.accountEmail}`
+    : `未連結 ${calendar.accountEmail}${calendar.error ? `：${calendar.error}` : ""}`;
+  calendarBoardEl.innerHTML = days
+    .map((day) => {
+      const tasks = monthTasks.filter((task) => sameLocalDay(task.scheduledStart, day));
+      const events = (calendar.events || []).filter((event) => sameLocalDay(event.start, day));
+      const isOutside = day.getMonth() !== new Date().getMonth();
+      return `<article class="calendar-day ${sameLocalDay(day.toISOString(), new Date()) ? "today" : ""} ${isOutside ? "outside-month" : ""}">
+        <header><span>${weekdayLabel(day)}</span><strong>${shortMonthDay(day.toISOString())}</strong></header>
+        <div class="calendar-items">${
+          tasks.length || events.length
+            ? [
+                ...events.map((event) => `<div class="calendar-item event"><i></i><span>${event.allDay ? "全日" : timeRange(event.start, event.end)}</span><strong>${esc(event.title)}</strong></div>`),
+                ...tasks.map((task) => `<div class="calendar-item priority-${task.priority}"><i class="priority-bar"></i><span>${timeRange(task.scheduledStart, task.scheduledEnd)}</span><strong>${esc(task.title)}</strong></div>`)
+              ].join("")
+            : `<p>未安排</p>`
+        }</div>
+      </article>`;
+    })
+    .join("");
 }
 
 function renderFocusList() {
@@ -329,13 +395,12 @@ function openEditor(task = null) {
   drawerTitleEl.textContent = task ? `編輯 #${task.id}` : "新增任務";
   $("task-id").value = task?.id ?? "";
   $("title").value = task?.title ?? "";
+  $("task-quadrant").value = task?.quadrant ?? "not-urgent-important";
   $("durationMinutes").value = task?.durationMinutes ?? 30;
   $("priority").value = task?.priority ?? 3;
-  $("task-energy").value = task?.energy ?? "medium";
   $("task-status").value = normalizeStatusValue(task?.status ?? "pending");
   $("earliestStart").value = toLocalInputValue(task?.earliestStart);
   $("deadline").value = toLocalInputValue(task?.deadline);
-  $("context").value = task?.context ?? "";
   drawerBackdropEl.hidden = false;
   drawerEl.setAttribute("aria-hidden", "false");
   document.body.classList.add("drawer-open");
@@ -353,11 +418,10 @@ function formPayload() {
     title: $("title").value.trim(),
     durationMinutes: Number($("durationMinutes").value),
     priority: Number($("priority").value),
-    energy: $("task-energy").value,
+    quadrant: $("task-quadrant").value,
     status: $("task-status").value,
     earliestStart: fromLocalInputValue($("earliestStart").value),
-    deadline: fromLocalInputValue($("deadline").value),
-    context: $("context").value.trim() || null
+    deadline: fromLocalInputValue($("deadline").value)
   };
 }
 
@@ -443,8 +507,53 @@ function normalizeStatusValue(status) {
   return status === "scheduled" ? "pending" : status;
 }
 
+function ratio(value, total) {
+  return Math.round((Number(value || 0) / Math.max(Number(total || 0), 1)) * 100);
+}
+
+function metricIcon(tone) {
+  return { total: "▦", progress: "◐", today: "◴", overdue: "!" }[tone] || "•";
+}
+
+function isUrgentTask(task) {
+  return isUrgentQuadrant(task.quadrant);
+}
+
+function isUrgentQuadrant(quadrant) {
+  return quadrant === "urgent-important" || quadrant === "urgent-not-important";
+}
+
 function timeRange(start, end) {
   return `${fmtTime(start)} - ${fmtTime(end)}`;
+}
+
+function calendarMonthDays(anchor) {
+  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 0, 0, 0, 0);
+  const start = new Date(first);
+  const day = start.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  start.setDate(first.getDate() + mondayOffset);
+  const last = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 0, 0, 0, 0);
+  const end = new Date(last);
+  const endDay = end.getDay();
+  end.setDate(last.getDate() + (endDay === 0 ? 0 : 7 - endDay));
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  return Array.from({ length: totalDays }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return date;
+  });
+}
+
+function sameLocalDay(value, date) {
+  if (!value) return false;
+  const left = value instanceof Date ? value : new Date(value);
+  const right = date instanceof Date ? date : new Date(date);
+  return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
+}
+
+function weekdayLabel(value) {
+  return new Intl.DateTimeFormat("zh-Hant", { weekday: "short" }).format(value);
 }
 
 function fmtTime(value) {
@@ -453,6 +562,10 @@ function fmtTime(value) {
 
 function shortDate(value) {
   return new Intl.DateTimeFormat("zh-Hant", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(value));
+}
+
+function shortMonthDay(value) {
+  return new Intl.DateTimeFormat("zh-Hant", { day: "2-digit", month: "2-digit" }).format(new Date(value));
 }
 
 function toLocalInputValue(value) {

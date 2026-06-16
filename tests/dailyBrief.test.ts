@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AssistantRepository } from "../src/db.js";
-import { runDailyBriefTick } from "../src/dailyBrief.js";
+import { buildDailyBriefMessage, runDailyBriefTick } from "../src/dailyBrief.js";
 import { prioritizeTasks } from "../src/prioritizer.js";
 
 function tempRepo(): AssistantRepository {
@@ -14,7 +14,7 @@ function tempRepo(): AssistantRepository {
 describe("daily brief", () => {
   it("sends only once per day after the configured time", async () => {
     const repo = tempRepo();
-    repo.addTask({ title: "今日重點", deadline: "2026-05-24T12:00:00.000Z" });
+    repo.addTask({ title: "今日重點", deadline: "2026-05-24T12:00:00.000Z", quadrant: "urgent-important" });
     const sent: string[] = [];
 
     await runDailyBriefTick(
@@ -37,7 +37,19 @@ describe("daily brief", () => {
     );
 
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toContain("今日工作重點");
+    expect(sent[0]).toContain("今日緊急重要工作");
+    repo.close();
+  });
+
+  it("only includes urgent important tasks in the daily brief", () => {
+    const repo = tempRepo();
+    repo.addTask({ title: "緊急重要任務", priority: 5, deadline: "2026-05-24T12:00:00.000Z", quadrant: "urgent-important" });
+    repo.addTask({ title: "其他象限任務", priority: 5, deadline: "2026-05-24T12:00:00.000Z", quadrant: "not-urgent-important" });
+
+    const message = buildDailyBriefMessage(repo, new Date("2026-05-24T09:00:00.000Z"));
+
+    expect(message).toContain("緊急重要任務");
+    expect(message).not.toContain("其他象限任務");
     repo.close();
   });
 

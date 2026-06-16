@@ -5,14 +5,21 @@ import { MiniMaxClient } from "./minimax.js";
 import { createAssistantBot, sendReminderTick } from "./bot.js";
 import { startDashboardServer } from "./dashboard.js";
 import { runDailyBriefTick } from "./dailyBrief.js";
+import { createAppleReminderAutoSync } from "./autoSync.js";
 
 const config = loadConfig();
 const repo = new AssistantRepository(config.databasePath);
 const minimax = new MiniMaxClient(config);
 const bot = createAssistantBot({ config, repo, minimax });
 const dashboard = startDashboardServer(repo, config.dashboardPort);
+const runAppleReminderAutoSync = createAppleReminderAutoSync(repo, {
+  enabled: config.appleReminderSyncEnabled,
+  intervalMinutes: config.appleReminderSyncIntervalMinutes,
+  listName: config.appleReminderSyncListName
+});
 
 cron.schedule("* * * * *", () => {
+  runAppleReminderAutoSync();
   sendReminderTick(bot, repo, config.allowedUserId).catch((error) => {
     console.error("Reminder tick failed", error);
   });
@@ -31,6 +38,7 @@ cron.schedule("* * * * *", () => {
 bot.launch().then(() => {
   console.log("Assistant bot is running.");
   console.log(`Dashboard is running at http://localhost:${config.dashboardPort}`);
+  runAppleReminderAutoSync();
 });
 
 process.once("SIGINT", () => shutdown("SIGINT"));

@@ -22,18 +22,23 @@ export async function runDailyBriefTick(
 }
 
 export function buildDailyBriefMessage(repo: AssistantRepository, now = new Date()): string {
-  const todayTasks = repo.listScheduledBetween(startOfLocalDay(now).toISOString(), endOfLocalDay(now).toISOString());
-  const prioritized = prioritizeTasks(repo.listActiveTasks(), now);
+  const todayTasks = repo
+    .listScheduledBetween(startOfLocalDay(now).toISOString(), endOfLocalDay(now).toISOString())
+    .filter((task) => task.quadrant === "urgent-important");
+  const prioritized = prioritizeTasks(
+    repo.listActiveTasks().filter((task) => task.quadrant === "urgent-important"),
+    now
+  );
   const top = prioritized.slice(0, 5);
   const overdue = prioritized.filter((task) => task.deadline && new Date(task.deadline) < now);
 
   return [
-    "今日工作重點",
+    "今日緊急重要工作",
     "",
-    todayTasks.length ? "今日時間表：" : "今日暫時未有排定時間。",
+    todayTasks.length ? "今日緊急重要時間表：" : "今日暫時未有排定緊急重要事項。",
     ...(todayTasks.length ? todayTasks.map((task) => `• ${formatTimeLine(task)}`) : []),
     "",
-    top.length ? "建議先後次序：" : "目前沒有未完成任務。",
+    top.length ? "緊急重要先後次序：" : "目前沒有未完成的緊急重要任務。",
     ...top.map((task, index) => `${index + 1}. #${task.id} ${task.title}（${task.reason}）`),
     overdue.length ? "" : null,
     overdue.length ? `注意：有 ${overdue.length} 項已過期限。` : null
