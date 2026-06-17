@@ -25,7 +25,10 @@ function task(overrides: Partial<Task>): Task {
 
 describe("buildSchedule", () => {
   it("places high energy work in deep work windows", () => {
-    const plan = buildSchedule([task({ id: 1, energy: "high" })], new Date("2026-05-23T01:00:00.000Z"));
+    const plan = buildSchedule(
+      [task({ id: 1, energy: "high", deadline: "2026-05-24T10:00:00.000Z" })],
+      new Date("2026-05-23T01:00:00.000Z")
+    );
     expect(plan).toHaveLength(1);
     const start = new Date(plan[0].scheduledStart);
     expect(start.getHours()).toBeGreaterThanOrEqual(9);
@@ -42,5 +45,30 @@ describe("buildSchedule", () => {
   it("ignores completed tasks", () => {
     const plan = buildSchedule([task({ id: 1, status: "done" })], new Date("2026-05-23T01:00:00.000Z"));
     expect(plan).toHaveLength(0);
+  });
+
+  it("does not schedule tasks without deadlines", () => {
+    const plan = buildSchedule([task({ id: 1, deadline: null })], new Date("2026-05-23T01:00:00.000Z"));
+    expect(plan).toHaveLength(0);
+  });
+
+  it("splits long tasks into multiple schedule segments", () => {
+    const plan = buildSchedule(
+      [task({ id: 1, durationMinutes: 300, deadline: "2026-05-27T10:00:00.000Z" })],
+      new Date("2026-05-23T01:00:00.000Z")
+    );
+    expect(plan).toHaveLength(3);
+    expect(plan.map((item) => item.segmentIndex)).toEqual([1, 2, 3]);
+    expect(plan.every((item) => item.segmentCount === 3)).toBe(true);
+  });
+
+  it("avoids busy calendar blocks", () => {
+    const plan = buildSchedule(
+      [task({ id: 1, durationMinutes: 60, deadline: "2026-05-24T10:00:00.000Z" })],
+      new Date("2026-05-23T01:00:00.000Z"),
+      [{ start: "2026-05-23T01:30:00.000Z", end: "2026-05-23T02:40:00.000Z", title: "Meeting" }]
+    );
+    expect(plan).toHaveLength(1);
+    expect(new Date(plan[0].scheduledStart).getTime()).toBeGreaterThanOrEqual(new Date("2026-05-23T02:50:00.000Z").getTime());
   });
 });

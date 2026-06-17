@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>個人排程助理</title>
-    <link rel="stylesheet" href="./style.css?v=20260614-2" />
+    <link rel="stylesheet" href="./style.css?v=20260617-1" />
   </head>
   <body>
     <div class="app-shell">
@@ -20,7 +20,9 @@
         <header class="topbar"><div class="search-box"><span>⌕</span><input id="task-search" type="search" placeholder="搜尋任務..." /><kbd>⌘ K</kbd></div><div class="top-actions"><button id="new-task" class="action-button primary" type="button">＋ 新增任務</button><div class="avatar">KC</div></div></header>
         <section class="status-strip"><div class="status-pill"><span class="pulse"></span><span id="last-updated">同步中</span></div><div class="status-pill" id="metrics"></div></section>
         <section id="quick-wins" class="quick-wins panel"><div class="panel-head"><div><p class="eyebrow">Quick Wins</p><h2>2 分鐘完成</h2></div><strong id="quick-wins-count">0</strong></div><div id="quick-wins-list" class="quick-wins-list"></div></section>
+        <section id="missing-deadlines" class="deadline-panel panel"><div class="panel-head"><div><p class="eyebrow">Needs Date</p><h2>待補 Deadline</h2></div><strong id="missing-deadline-count">0</strong></div><div id="missing-deadline-list" class="deadline-list"></div></section>
         <section id="matrix" class="matrix-grid"></section>
+        <section id="gantt" class="gantt-panel panel"><div class="panel-head"><div><p class="eyebrow">Schedule</p><h2>甘特圖</h2><p class="muted">任務工作段會避開日曆忙碌時間。</p></div></div><div id="gantt-board" class="gantt-board"></div></section>
         <section id="calendar" class="calendar-panel panel"><div class="panel-head"><div><p class="eyebrow">Calendar</p><h2>每月日曆</h2><p id="calendar-status" class="muted"></p></div><button id="refresh" type="button">刷新</button></div><div id="calendar-board" class="calendar-board"></div></section>
         <section id="completed-bin" class="completed-bin panel" aria-label="完成箱">
           <div class="panel-head"><div><p class="eyebrow">Archive</p><h2>完成箱</h2></div><button id="clear-completed" type="button">清空完成箱</button></div>
@@ -31,6 +33,6 @@
       </main>
     </div>
     <div id="drawer-backdrop" class="drawer-backdrop" hidden></div><aside id="drawer" class="drawer" aria-hidden="true"><form id="task-form"><div class="drawer-head"><div><p class="eyebrow">Editor</p><h2 id="drawer-title">新增任務</h2></div><button id="close-drawer" type="button">關閉</button></div><input id="task-id" type="hidden" /><label>任務標題<input id="title" required maxlength="120" /></label><label>四象限<select id="task-quadrant" required><option value="urgent-important">緊急重要</option><option value="urgent-not-important">緊急不重要</option><option value="not-urgent-important">不緊急重要</option><option value="not-urgent-not-important">不緊急不重要</option></select></label><div class="form-grid"><label>工時（分鐘）<input id="durationMinutes" type="number" min="1" step="1" required /></label><label>優先級<input id="priority" type="number" min="1" max="5" required /></label></div><label>狀態<select id="task-status"><option value="pending">待定</option><option value="in_progress">進行中</option><option value="done">完成</option></select></label><label>Start day/time<input id="earliestStart" type="datetime-local" /></label><label>Due day/time<input id="deadline" type="datetime-local" /></label><p class="form-note">儲存後會自動同步至 Reminders 並重新計算四象限。</p><div class="drawer-actions"><button id="cancel-edit" type="button">取消</button><button class="primary" type="submit">儲存</button></div></form></aside>
-    <script src="./app.js?v=20260614-2" type="module"></script>
+    <script src="./app.js?v=20260617-1" type="module"></script>
   </body>
 </html>

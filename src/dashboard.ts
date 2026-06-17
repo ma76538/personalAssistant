@@ -6,8 +6,8 @@ import mime from "mime";
 import { z } from "zod";
 import { AssistantRepository } from "./db.js";
 import { deleteAppleReminderForTask, syncAppleReminders, writeTaskToAppleReminder } from "./appleReminders.js";
-import { listAppleCalendarEvents } from "./appleCalendar.js";
-import { buildSchedule } from "./scheduler.js";
+import { AppleCalendarEvent, listAppleCalendarEvents } from "./appleCalendar.js";
+import { buildSchedule, BusyBlock } from "./scheduler.js";
 import { prioritizeTasks } from "./prioritizer.js";
 import { endOfLocalDay, startOfLocalDay, startOfNextWeek } from "./time.js";
 import { EnergySchema, QuadrantSchema, ReminderPolicySchema, TaskStatusSchema } from "./types.js";
@@ -146,15 +146,20 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
       const monthEnd = startOfNextMonth(now).toISOString();
       const prioritized = prioritizeTasks(tasks, now);
       const completed = tasks.filter((task) => task.status === "done").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      const calendar = listAppleCalendarEvents(calendarAccountEmail, monthStart, monthEnd);
+      const busyBlocks = calendarEventsToBusyBlocks(calendar.events);
+      const scheduleSegments = buildSchedule(tasks, now, busyBlocks);
       sendJson(response, {
         total: tasks.length,
         active: tasks.filter((task) => !["done", "cancelled"].includes(task.status)).length,
         done: tasks.filter((task) => task.status === "done").length,
+        missingDeadlines: tasks.filter((task) => !["done", "cancelled"].includes(task.status) && !task.deadline),
+        scheduleSegments,
         overdue: tasks.filter((task) => task.deadline && task.status !== "done" && new Date(task.deadline) < now).length,
         today: repo.listScheduledBetween(todayStart, todayEnd),
         week: repo.listScheduledBetween(todayStart, weekEnd),
         month: repo.listScheduledBetween(monthStart, monthEnd),
-        calendar: listAppleCalendarEvents(calendarAccountEmail, monthStart, monthEnd),
+        calendar,
         completed,
         topPriorities: prioritized.slice(0, 5),
         quadrants: groupQuadrants(prioritized),
@@ -222,7 +227,18 @@ async function readJson(request: http.IncomingMessage): Promise<unknown> {
 }
 
 function reschedule(repo: AssistantRepository): void {
-  repo.applySchedule(buildSchedule(repo.listActiveTasks()));
+  const now = new Date();
+  const calendarEnd = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+  const calendar = listAppleCalendarEvents(calendarAccountEmail, now.toISOString(), calendarEnd.toISOString());
+  repo.applySchedule(buildSchedule(repo.listActiveTasks(), now, calendarEventsToBusyBlocks(calendar.events)));
+}
+
+function calendarEventsToBusyBlocks(events: AppleCalendarEvent[]): BusyBlock[] {
+  return events.map((event) => ({
+    start: event.start,
+    end: event.end,
+    title: event.title
+  }));
 }
 
 function startOfMonth(date: Date): Date {

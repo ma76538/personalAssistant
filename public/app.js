@@ -4,6 +4,9 @@ const $ = (id) => document.getElementById(id);
 const matrixEl = $("matrix");
 const quickWinsListEl = $("quick-wins-list");
 const quickWinsCountEl = $("quick-wins-count");
+const missingDeadlineListEl = $("missing-deadline-list");
+const missingDeadlineCountEl = $("missing-deadline-count");
+const ganttBoardEl = $("gantt-board");
 const calendarBoardEl = $("calendar-board");
 const calendarStatusEl = $("calendar-status");
 const completedListEl = $("completed-list");
@@ -64,6 +67,7 @@ matrixEl.addEventListener("pointerdown", handlePointerDragStart);
 document.addEventListener("pointerup", handlePointerDragEnd);
 
 quickWinsListEl.addEventListener("click", handleTaskButtonClick);
+missingDeadlineListEl.addEventListener("click", handleTaskButtonClick);
 
 completedListEl.addEventListener("click", handleTaskButtonClick);
 completedListEl.addEventListener("dragstart", handleDragStart);
@@ -208,7 +212,9 @@ async function loadDashboard() {
 function render() {
   renderMetrics();
   renderQuickWins();
+  renderMissingDeadlines();
   renderMatrix();
+  renderGantt();
   renderCalendar();
   renderCompletedBin();
   renderFocusList();
@@ -282,6 +288,22 @@ function renderQuickWins() {
     : `<div class="drop-empty">沒有 2 分鐘內可完成的任務。</div>`;
 }
 
+function renderMissingDeadlines() {
+  const tasks = filtered(state.summary?.missingDeadlines || []).filter((task) => !isQuickWin(task));
+  missingDeadlineCountEl.textContent = String(tasks.length);
+  missingDeadlineListEl.innerHTML = tasks.length
+    ? tasks
+        .map(
+          (task) => `<article class="deadline-task priority-${task.priority}" data-id="${task.id}">
+            <span class="priority-bar"></span>
+            <div><strong>${esc(task.title)}</strong><p>未有 deadline，暫不排程/提醒。</p></div>
+            <button data-action="edit" data-id="${task.id}" type="button">補 Deadline</button>
+          </article>`
+        )
+        .join("")
+    : `<div class="drop-empty">所有未完成任務都有 deadline。</div>`;
+}
+
 function quickWinRow(task) {
   return `<article class="quick-task priority-${task.priority}" data-id="${task.id}">
     <span class="priority-bar"></span>
@@ -308,7 +330,7 @@ function prioritizeVisibleTasks(tasks) {
 
 function taskRow(task, rank) {
   const status = normalizeStatusValue(task.status);
-  const urgentMissingDue = isUrgentTask(task) && !task.deadline;
+  const urgentMissingDue = !task.deadline;
   const needsDue = urgentMissingDue || lastDueWarningTaskId === task.id;
   const startMarkup = task.earliestStart ? `<span>Start day ${shortDate(task.earliestStart)}</span>` : "";
   return `<article class="task-row priority-${task.priority} ${needsDue ? "needs-due" : ""}" draggable="true" data-id="${task.id}">
@@ -317,7 +339,7 @@ function taskRow(task, rank) {
     <div class="task-main">
       <strong>${esc(task.title)}</strong>
       ${startMarkup ? `<div class="task-dates">${startMarkup}</div>` : ""}
-      ${needsDue ? `<p class="due-warning">緊急任務必須加 Due day</p>` : ""}
+      ${needsDue ? `<p class="due-warning">每個任務都必須加 Due day，未補前不會自動排程。</p>` : ""}
     </div>
     <div class="matrix-status-actions" aria-label="改變任務狀態">
       ${dueChip(task, needsDue)}
@@ -327,6 +349,45 @@ function taskRow(task, rank) {
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
     </div>
   </article>`;
+}
+
+function renderGantt() {
+  const segments = state.summary?.scheduleSegments || [];
+  const calendar = state.summary?.calendar || { events: [] };
+  const items = [
+    ...segments.map((segment) => ({ type: "task", ...segment, task: state.tasks.find((task) => task.id === segment.taskId) })),
+    ...(calendar.events || []).filter((event) => !event.allDay).map((event) => ({ type: "busy", scheduledStart: event.start, scheduledEnd: event.end, title: event.title }))
+  ]
+    .filter((item) => item.scheduledStart && item.scheduledEnd)
+    .sort((a, b) => new Date(a.scheduledStart) - new Date(b.scheduledStart))
+    .slice(0, 40);
+
+  ganttBoardEl.innerHTML = items.length
+    ? items
+        .map((item) => {
+          const start = new Date(item.scheduledStart);
+          const end = new Date(item.scheduledEnd);
+          const left = ganttLeft(start);
+          const width = Math.max(6, ((end - start) / 60000 / (12 * 60)) * 100);
+          const title = item.type === "busy" ? item.title : item.task?.title || `#${item.taskId}`;
+          const meta =
+            item.type === "busy"
+              ? "Calendar"
+              : item.segmentCount > 1
+                ? `第 ${item.segmentIndex}/${item.segmentCount} 段`
+                : "任務";
+          return `<article class="gantt-row ${item.type}">
+            <div class="gantt-label"><strong>${esc(title)}</strong><small>${shortMonthDay(item.scheduledStart)} ${timeRange(item.scheduledStart, item.scheduledEnd)}｜${meta}</small></div>
+            <div class="gantt-track"><span style="left:${left}%;width:${width}%"></span></div>
+          </article>`;
+        })
+        .join("")
+    : `<div class="drop-empty">暫時沒有可排程的工作段。請先補 deadline。</div>`;
+}
+
+function ganttLeft(date) {
+  const hour = date.getHours() + date.getMinutes() / 60;
+  return Math.max(0, Math.min(94, ((hour - 8) / 12) * 100));
 }
 
 function dueChip(task, needsDue = false) {

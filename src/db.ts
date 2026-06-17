@@ -318,7 +318,7 @@ export class AssistantRepository {
     );
     const transaction = this.db.transaction(() => {
       clearMovable.run(nowIso());
-      for (const item of plan) {
+      for (const item of aggregateSchedule(plan)) {
         update.run(item.scheduledStart, item.scheduledEnd, nowIso(), item.taskId);
       }
     });
@@ -416,4 +416,22 @@ export class AssistantRepository {
       updatedAt: String(row.updated_at)
     };
   }
+}
+
+function aggregateSchedule(plan: Array<{ taskId: number; scheduledStart: string; scheduledEnd: string }>): Array<{ taskId: number; scheduledStart: string; scheduledEnd: string }> {
+  const byTask = new Map<number, { taskId: number; scheduledStart: string; scheduledEnd: string }>();
+  for (const item of plan) {
+    const existing = byTask.get(item.taskId);
+    if (!existing) {
+      byTask.set(item.taskId, { taskId: item.taskId, scheduledStart: item.scheduledStart, scheduledEnd: item.scheduledEnd });
+      continue;
+    }
+    if (new Date(item.scheduledStart) < new Date(existing.scheduledStart)) {
+      existing.scheduledStart = item.scheduledStart;
+    }
+    if (new Date(item.scheduledEnd) > new Date(existing.scheduledEnd)) {
+      existing.scheduledEnd = item.scheduledEnd;
+    }
+  }
+  return [...byTask.values()];
 }

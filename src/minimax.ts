@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AppConfig } from "./config.js";
 import { parseFallbackAction } from "./fallbackParser.js";
-import { ParsedAction, ParsedActionSchema, Task } from "./types.js";
+import { ParsedAction, ParsedActionSchema, PriorityReview, PriorityReviewSchema, Task } from "./types.js";
 
 type MiniMaxMessage = {
   role: "system" | "user" | "assistant";
@@ -30,6 +30,10 @@ const ParsedActionResultSchema = z.preprocess((value) => {
   }
   return value;
 }, ParsedActionSchema);
+
+const PriorityReviewResultSchema = z.object({
+  reviews: z.array(PriorityReviewSchema)
+});
 
 export class MiniMaxClient {
   constructor(private readonly config: Pick<AppConfig, "minimaxApiKey" | "minimaxBaseUrl" | "minimaxModel" | "timezone">) {}
@@ -89,6 +93,47 @@ export class MiniMaxClient {
     const content = JSON.stringify(input);
     const response = await this.request([this.message("system", system), this.message("user", content)]);
     return stripThinking(response).trim() || input.preview;
+  }
+
+  async analyzeTaskPriorities(input: { tasks: Task[]; now: Date; calendarEvents?: Array<{ title: string; start: string; end: string }> }): Promise<PriorityReview[]> {
+    const system = [
+      "你是個人排程助理的優先級審核員。只輸出 JSON object，不要 Markdown，不要解釋。",
+      "你只提供建議，不直接修改任務。",
+      "判斷任務優先緩急時，要同時考慮 deadline、工作時長、四象限、目前狀態、日曆忙碌時段。",
+      "recommendedPriority 必須是 1-5，5 最高。",
+      "recommendedQuadrant 必須是 urgent-important, urgent-not-important, not-urgent-important, not-urgent-not-important。",
+      "如果 deadline 缺失，要在 deadlineConcern 說明，並避免把它判成可靠的緊急任務。"
+    ].join("\n");
+    const user = JSON.stringify({
+      now: input.now.toISOString(),
+      timezone: this.config.timezone,
+      tasks: input.tasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        durationMinutes: task.durationMinutes,
+        deadline: task.deadline,
+        earliestStart: task.earliestStart,
+        priority: task.priority,
+        quadrant: task.quadrant,
+        status: task.status
+      })),
+      calendarEvents: input.calendarEvents ?? [],
+      schema: {
+        reviews: [
+          {
+            taskId: "task id",
+            recommendedPriority: "1..5",
+            recommendedQuadrant: "urgent-important|urgent-not-important|not-urgent-important|not-urgent-not-important",
+            importanceReason: "string",
+            urgencyReason: "string",
+            deadlineConcern: "string optional",
+            suggestedSplitMinutes: "positive integer array optional"
+          }
+        ]
+      }
+    });
+    const result = await this.requestJson([this.message("system", system), this.message("user", user)], PriorityReviewResultSchema);
+    return result.reviews;
   }
 
   private async requestJson<T>(messages: MiniMaxMessage[], schema: z.ZodType<T>): Promise<T> {

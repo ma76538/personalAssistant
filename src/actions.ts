@@ -1,6 +1,7 @@
 import { AssistantRepository } from "./db.js";
 import { formatSchedulePreview, formatTask } from "./format.js";
 import { writeTaskToAppleReminder } from "./appleReminders.js";
+import { listAppleCalendarEvents } from "./appleCalendar.js";
 import { buildSchedule } from "./scheduler.js";
 import { ParsedAction, ParsedTask, PendingAction, Task } from "./types.js";
 
@@ -44,7 +45,7 @@ export function createPendingAction(repo: AssistantRepository, parsed: ParsedAct
     }
     case "replan": {
       const tasks = repo.listActiveTasks();
-      const plan = buildSchedule(tasks, now);
+      const plan = buildSchedule(tasks, now, calendarBusyBlocks(now));
       return {
         type: "replan",
         parsedAction: parsed,
@@ -81,7 +82,7 @@ export function applyPendingAction(repo: AssistantRepository, pending: PendingAc
         syncTaskToAppleReminders(repo, task);
       }
       const tasks = repo.listActiveTasks();
-      repo.applySchedule(buildSchedule(tasks));
+      repo.applySchedule(buildSchedule(tasks, new Date(), calendarBusyBlocks()));
       const refreshed = created.map((task) => repo.getTask(task.id)!).map(formatTask).join("\n\n");
       return `已新增 ${created.length} 個任務並更新排程：\n${refreshed}。`;
     }
@@ -101,27 +102,33 @@ export function applyPendingAction(repo: AssistantRepository, pending: PendingAc
         status: "pending"
       });
       syncTaskToAppleReminders(repo, updated);
-      repo.applySchedule(buildSchedule(repo.listActiveTasks()));
+      repo.applySchedule(buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks()));
       return `已修改並更新排程：\n${formatTask(repo.getTask(task.id)!)}。`;
     }
     case "complete": {
       const task = requireTarget(repo, parsed.task?.target);
       const updated = repo.updateTask(task.id, { status: "done", scheduledStart: null, scheduledEnd: null });
       syncTaskToAppleReminders(repo, updated);
-      repo.applySchedule(buildSchedule(repo.listActiveTasks()));
+      repo.applySchedule(buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks()));
       return `已完成：#${task.id} ${task.title}。`;
     }
     case "cancel": {
       const task = requireTarget(repo, parsed.task?.target);
       const updated = repo.updateTask(task.id, { status: "cancelled", scheduledStart: null, scheduledEnd: null });
       syncTaskToAppleReminders(repo, updated);
-      repo.applySchedule(buildSchedule(repo.listActiveTasks()));
+      repo.applySchedule(buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks()));
       return `已取消：#${task.id} ${task.title}。`;
     }
     case "replan":
-      repo.applySchedule(pending.schedulePlan || buildSchedule(repo.listActiveTasks()));
+      repo.applySchedule(pending.schedulePlan || buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks()));
       return "已套用新的未開始任務排程。";
   }
+}
+
+function calendarBusyBlocks(now = new Date()): Array<{ start: string; end: string; title?: string }> {
+  const end = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+  const calendar = listAppleCalendarEvents(process.env.CALENDAR_ACCOUNT_EMAIL || "kevin@region.mo", now.toISOString(), end.toISOString());
+  return calendar.events.map((event) => ({ start: event.start, end: event.end, title: event.title }));
 }
 
 function syncTaskToAppleReminders(repo: AssistantRepository, task: Task): void {

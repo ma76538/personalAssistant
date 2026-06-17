@@ -130,15 +130,23 @@ describe("dashboard API", () => {
 
   it("returns monthly calendar data for the dashboard", async () => {
     const { repo, baseUrl } = createHarness();
-    repo.addTask({ title: "本月任務", quadrant: "urgent-important" });
+    repo.addTask({ title: "本月任務", quadrant: "urgent-important", deadline: "2026-06-20T10:00:00.000Z" });
+    repo.addTask({ title: "待補日期", quadrant: "not-urgent-important" });
 
     const response = await fetch(`${baseUrl}/api/summary`);
-    const payload = (await response.json()) as { month: unknown[]; calendar: { accountEmail: string; connected: boolean; events: unknown[] } };
+    const payload = (await response.json()) as {
+      month: unknown[];
+      calendar: { accountEmail: string; connected: boolean; events: unknown[] };
+      missingDeadlines: Array<{ title: string }>;
+      scheduleSegments: unknown[];
+    };
 
     expect(response.status).toBe(200);
     expect(Array.isArray(payload.month)).toBe(true);
     expect(payload.calendar.accountEmail).toBe("kevin@region.mo");
     expect(payload.calendar.connected).toBe(false);
     expect(payload.calendar.events).toEqual([]);
+    expect(payload.missingDeadlines.map((task) => task.title)).toContain("待補日期");
+    expect(payload.scheduleSegments.length).toBeGreaterThan(0);
   });
 });

@@ -53,6 +53,17 @@ export type Task = {
   updatedAt: string;
 };
 
+export const PriorityReviewSchema = z.object({
+  taskId: z.number().int().positive(),
+  recommendedPriority: z.number().int().min(1).max(5),
+  recommendedQuadrant: QuadrantSchema,
+  importanceReason: z.string().min(1),
+  urgencyReason: z.string().min(1),
+  deadlineConcern: z.string().optional(),
+  suggestedSplitMinutes: z.array(z.number().int().positive()).optional()
+});
+export type PriorityReview = z.infer<typeof PriorityReviewSchema>;
+
 export const PendingActionSchema = z.object({
   type: z.enum(["add", "modify", "complete", "cancel", "replan"]),
   parsedAction: ParsedActionSchema,

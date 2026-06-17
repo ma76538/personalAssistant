@@ -5,6 +5,15 @@ export type ScheduleItem = {
   taskId: number;
   scheduledStart: string;
   scheduledEnd: string;
+  segmentIndex: number;
+  segmentCount: number;
+  conflict?: string;
+};
+
+export type BusyBlock = {
+  start: string;
+  end: string;
+  title?: string;
 };
 
 type WorkWindow = {
@@ -21,10 +30,12 @@ const WINDOWS: WorkWindow[] = [
 ];
 
 const BUFFER_MINUTES = 10;
+const MAX_SEGMENT_MINUTES = 120;
+const MIN_SEGMENT_MINUTES = 25;
 
-export function buildSchedule(tasks: Task[], now = new Date()): ScheduleItem[] {
+export function buildSchedule(tasks: Task[], now = new Date(), busyBlocks: BusyBlock[] = []): ScheduleItem[] {
   const movable = tasks
-    .filter((task) => task.status === "pending" || task.status === "scheduled")
+    .filter((task) => (task.status === "pending" || task.status === "scheduled") && Boolean(task.deadline))
     .sort(compareTasks);
 
   const plan: ScheduleItem[] = [];
@@ -32,22 +43,32 @@ export function buildSchedule(tasks: Task[], now = new Date()): ScheduleItem[] {
   let day = startOfLocalDay(now);
 
   for (const task of movable) {
-    const placement = findPlacement(task, cursorByWindow, day, now);
-    if (!placement) {
-      day = new Date(day.getTime() + 24 * 60 * 60 * 1000);
-      const nextPlacement = findPlacement(task, cursorByWindow, day, now);
-      if (nextPlacement) {
-        plan.push(nextPlacement);
+    const segments = splitDuration(task.durationMinutes);
+    const taskPlan: ScheduleItem[] = [];
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const placement = findPlacement(task, segments[index], cursorByWindow, day, now, busyBlocks);
+      if (!placement) {
+        break;
       }
+      taskPlan.push({
+        ...placement,
+        segmentIndex: index + 1,
+        segmentCount: segments.length
+      });
+      day = startOfLocalDay(new Date(placement.scheduledEnd));
+    }
+
+    if (taskPlan.length === segments.length) {
+      plan.push(...taskPlan);
       continue;
     }
-    plan.push(placement);
   }
 
   return plan;
 }
 
-function findPlacement(task: Task, cursorByWindow: Map<string, Date>, startDay: Date, now: Date): ScheduleItem | null {
+function findPlacement(task: Task, durationMinutes: number, cursorByWindow: Map<string, Date>, startDay: Date, now: Date, busyBlocks: BusyBlock[]): Omit<ScheduleItem, "segmentIndex" | "segmentCount"> | null {
   for (let offset = 0; offset < 21; offset += 1) {
     const day = new Date(startDay.getTime() + offset * 24 * 60 * 60 * 1000);
     const preferred = [
@@ -61,14 +82,22 @@ function findPlacement(task: Task, cursorByWindow: Map<string, Date>, startDay: 
       const windowEnd = setLocalTime(day, window.end);
       const earliestStart = task.earliestStart ? new Date(task.earliestStart) : now;
       const cursor = cursorByWindow.get(key) ?? windowStart;
-      const start = new Date(Math.max(cursor.getTime(), now.getTime(), earliestStart.getTime()));
-      const end = addMinutes(start, task.durationMinutes);
+      let start = new Date(Math.max(cursor.getTime(), now.getTime(), earliestStart.getTime()));
+      let end = addMinutes(start, durationMinutes);
+      const conflict = firstConflict(start, end, busyBlocks);
+      if (conflict) {
+        start = addMinutes(new Date(conflict.end), BUFFER_MINUTES);
+        end = addMinutes(start, durationMinutes);
+      }
       const bufferedEnd = addMinutes(end, BUFFER_MINUTES);
 
       if (end > windowEnd) {
         continue;
       }
       if (task.deadline && end > new Date(task.deadline)) {
+        continue;
+      }
+      if (firstConflict(start, end, busyBlocks)) {
         continue;
       }
 
@@ -78,6 +107,35 @@ function findPlacement(task: Task, cursorByWindow: Map<string, Date>, startDay: 
   }
 
   return null;
+}
+
+function splitDuration(durationMinutes: number): number[] {
+  if (durationMinutes <= MAX_SEGMENT_MINUTES) {
+    return [durationMinutes];
+  }
+  const segments: number[] = [];
+  let remaining = durationMinutes;
+  while (remaining > 0) {
+    const next = Math.min(MAX_SEGMENT_MINUTES, remaining);
+    if (remaining - next > 0 && remaining - next < MIN_SEGMENT_MINUTES) {
+      segments.push(next + remaining - next);
+      break;
+    }
+    segments.push(next);
+    remaining -= next;
+  }
+  return segments;
+}
+
+function firstConflict(start: Date, end: Date, busyBlocks: BusyBlock[]): BusyBlock | null {
+  const startTime = start.getTime();
+  const endTime = end.getTime();
+  return (
+    busyBlocks
+      .map((block) => ({ ...block, startDate: new Date(block.start), endDate: new Date(block.end) }))
+      .filter((block) => Number.isFinite(block.startDate.getTime()) && Number.isFinite(block.endDate.getTime()))
+      .find((block) => startTime < block.endDate.getTime() && endTime > block.startDate.getTime()) ?? null
+  );
 }
 
 function compareTasks(a: Task, b: Task): number {
