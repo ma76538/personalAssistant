@@ -61,10 +61,10 @@ if !granted {
 
 let calendars = store.calendars(for: .reminder)
 let names = calendars.map { $0.title }
-let selectedCalendars = calendars.filter { quadrantKey($0.title) != nil }
+let selectedCalendars = ensureManagedCalendars(store)
 if selectedCalendars.isEmpty {
   throw NSError(domain: "PersonalAssistantReminders", code: 2, userInfo: [
-    NSLocalizedDescriptionKey: "No quadrant reminder lists found. Available lists: " + names.joined(separator: ", ")
+    NSLocalizedDescriptionKey: "No managed reminder lists found. Available lists: " + names.joined(separator: ", ")
   ])
 }
 
@@ -105,6 +105,25 @@ func quadrantKey(_ title: String) -> String? {
     "唔急唔重要": "not-urgent-not-important"
   ]
   return aliases[key]
+}
+
+func isPendingList(_ title: String) -> Bool {
+  let key = title
+    .replacingOccurrences(of: " ", with: "")
+    .replacingOccurrences(of: "　", with: "")
+  return key == "待定"
+}
+
+func ensureManagedCalendars(_ store: EKEventStore) -> [EKCalendar] {
+  var calendars = store.calendars(for: .reminder)
+  if !calendars.contains(where: { isPendingList($0.title) }) {
+    let calendar = EKCalendar(for: .reminder, eventStore: store)
+    calendar.title = "待定"
+    calendar.source = store.defaultCalendarForNewReminders()?.source ?? store.sources.first
+    try? store.saveCalendar(calendar, commit: true)
+    calendars = store.calendars(for: .reminder)
+  }
+  return calendars.filter { quadrantKey($0.title) != nil || isPendingList($0.title) }
 }
 
 let statusTags: [String: String] = ["#待定": "pending", "#進行中": "in_progress", "#完成": "done"]
@@ -232,6 +251,28 @@ func quadrantKey(_ title: String) -> String? {
   return aliases[key]
 }
 
+func isPendingList(_ title: String) -> Bool {
+  let key = title
+    .replacingOccurrences(of: " ", with: "")
+    .replacingOccurrences(of: "　", with: "")
+  return key == "待定"
+}
+
+func ensurePendingCalendar(_ store: EKEventStore) -> EKCalendar? {
+  if let existing = store.calendars(for: .reminder).first(where: { isPendingList($0.title) }) {
+    return existing
+  }
+  let calendar = EKCalendar(for: .reminder, eventStore: store)
+  calendar.title = "待定"
+  calendar.source = store.defaultCalendarForNewReminders()?.source ?? store.sources.first
+  do {
+    try store.saveCalendar(calendar, commit: true)
+    return calendar
+  } catch {
+    return nil
+  }
+}
+
 func dateComponents(_ iso: String?) -> DateComponents? {
   guard let iso, !iso.isEmpty else { return nil }
   let formatter = ISO8601DateFormatter()
@@ -284,6 +325,8 @@ if let sourceId, let existing = store.calendarItem(withIdentifier: sourceId) as?
 let calendars = store.calendars(for: .reminder)
 if let quadrant = payload["quadrant"] as? String,
    let calendar = calendars.first(where: { quadrantKey($0.title) == quadrant }) {
+  reminder.calendar = calendar
+} else if let calendar = ensurePendingCalendar(store) {
   reminder.calendar = calendar
 } else if reminder.calendar == nil, let calendar = calendars.first(where: { quadrantKey($0.title) != nil }) ?? store.defaultCalendarForNewReminders() {
   reminder.calendar = calendar

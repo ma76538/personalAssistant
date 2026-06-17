@@ -14,7 +14,7 @@ import { EnergySchema, QuadrantSchema, ReminderPolicySchema, TaskStatusSchema } 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "../public");
-const calendarAccountEmail = process.env.CALENDAR_ACCOUNT_EMAIL || "kevin@region.mo";
+const DEFAULT_CALENDAR_ACCOUNT_EMAIL = process.env.CALENDAR_ACCOUNT_EMAIL || "kevin@region.mo";
 
 export function startDashboardServer(repo: AssistantRepository, port: number): http.Server {
   const server = http.createServer(async (request, response) => {
@@ -125,6 +125,18 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
         sendJson(response, { policy: repo.resetReminderPolicy() });
         return;
       }
+
+      if (url.pathname === "/api/calendar-settings" && request.method === "GET") {
+        sendJson(response, calendarSettings(repo));
+        return;
+      }
+
+      if (url.pathname === "/api/calendar-settings" && request.method === "PUT") {
+        const input = CalendarSettingsSchema.parse(await readJson(request));
+        repo.saveSetting("calendar_account_email", input.accountEmail);
+        sendJson(response, calendarSettings(repo));
+        return;
+      }
     } catch (error) {
       const status = error instanceof z.ZodError ? 400 : 500;
       sendJson(response, { error: error instanceof Error ? error.message : "Unknown error" }, status);
@@ -145,15 +157,18 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
       const monthStart = startOfMonth(now).toISOString();
       const monthEnd = startOfNextMonth(now).toISOString();
       const prioritized = prioritizeTasks(tasks, now);
+      const pendingTaskIds = new Set(tasks.filter((task) => !task.quadrant).map((task) => task.id));
+      const actionablePriorities = prioritized.filter((task) => !pendingTaskIds.has(task.id));
       const completed = tasks.filter((task) => task.status === "done").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-      const calendar = listAppleCalendarEvents(calendarAccountEmail, monthStart, monthEnd);
+      const calendar = listAppleCalendarEvents(getCalendarAccountEmail(repo), monthStart, monthEnd);
       const busyBlocks = calendarEventsToBusyBlocks(calendar.events);
       const scheduleSegments = buildSchedule(tasks, now, busyBlocks);
       sendJson(response, {
         total: tasks.length,
         active: tasks.filter((task) => !["done", "cancelled"].includes(task.status)).length,
         done: tasks.filter((task) => task.status === "done").length,
-        missingDeadlines: tasks.filter((task) => !["done", "cancelled"].includes(task.status) && !task.deadline),
+        pendingBucket: tasks.filter((task) => !["done", "cancelled"].includes(task.status) && !task.quadrant),
+        missingDeadlines: tasks.filter((task) => !["done", "cancelled"].includes(task.status) && task.quadrant && !task.deadline),
         scheduleSegments,
         overdue: tasks.filter((task) => task.deadline && task.status !== "done" && new Date(task.deadline) < now).length,
         today: repo.listScheduledBetween(todayStart, todayEnd),
@@ -161,8 +176,8 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
         month: repo.listScheduledBetween(monthStart, monthEnd),
         calendar,
         completed,
-        topPriorities: prioritized.slice(0, 5),
-        quadrants: groupQuadrants(prioritized),
+        topPriorities: actionablePriorities.slice(0, 5),
+        quadrants: groupQuadrants(actionablePriorities),
         byEnergy: countBy(tasks, "energy"),
         byStatus: countBy(tasks, "status")
       });
@@ -212,6 +227,10 @@ const SyncInputSchema = z.object({
   listName: z.string().trim().min(1).default("全部")
 });
 
+const CalendarSettingsSchema = z.object({
+  accountEmail: z.string().trim().email()
+});
+
 function sendJson(response: http.ServerResponse, payload: unknown, status = 200): void {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   response.end(JSON.stringify(payload));
@@ -229,8 +248,21 @@ async function readJson(request: http.IncomingMessage): Promise<unknown> {
 function reschedule(repo: AssistantRepository): void {
   const now = new Date();
   const calendarEnd = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
-  const calendar = listAppleCalendarEvents(calendarAccountEmail, now.toISOString(), calendarEnd.toISOString());
+  const calendar = listAppleCalendarEvents(getCalendarAccountEmail(repo), now.toISOString(), calendarEnd.toISOString());
   repo.applySchedule(buildSchedule(repo.listActiveTasks(), now, calendarEventsToBusyBlocks(calendar.events)));
+}
+
+function getCalendarAccountEmail(repo: AssistantRepository): string {
+  return repo.getSetting("calendar_account_email", DEFAULT_CALENDAR_ACCOUNT_EMAIL);
+}
+
+function calendarSettings(repo: AssistantRepository): { accountEmail: string; provider: string; oauthStatus: string; note: string } {
+  return {
+    accountEmail: getCalendarAccountEmail(repo),
+    provider: "apple-calendar",
+    oauthStatus: "not_required_for_apple_calendar",
+    note: "目前用 macOS Calendar 權限讀取本機 Apple Calendar；若之後改接 Google/Microsoft Calendar，才需要 OAuth client 設定。"
+  };
 }
 
 function calendarEventsToBusyBlocks(events: AppleCalendarEvent[]): BusyBlock[] {

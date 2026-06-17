@@ -35,7 +35,7 @@ const MIN_SEGMENT_MINUTES = 25;
 
 export function buildSchedule(tasks: Task[], now = new Date(), busyBlocks: BusyBlock[] = []): ScheduleItem[] {
   const movable = tasks
-    .filter((task) => (task.status === "pending" || task.status === "scheduled") && Boolean(task.deadline))
+    .filter((task) => (task.status === "pending" || task.status === "scheduled") && Boolean(task.deadline) && Boolean(task.quadrant))
     .sort(compareTasks);
 
   const plan: ScheduleItem[] = [];

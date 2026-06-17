@@ -396,6 +396,22 @@ export class AssistantRepository {
     return this.saveReminderPolicy(DEFAULT_REMINDER_POLICY);
   }
 
+  getSetting(key: string, fallback = ""): string {
+    const row = this.db.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as { value?: string } | undefined;
+    return row?.value ?? fallback;
+  }
+
+  saveSetting(key: string, value: string): string {
+    this.db
+      .prepare(
+        `INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+      )
+      .run(key, value, nowIso());
+    return value;
+  }
+
   private mapTask(row: Record<string, unknown>): Task {
     return {
       id: Number(row.id),

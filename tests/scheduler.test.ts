@@ -15,7 +15,7 @@ function task(overrides: Partial<Task>): Task {
     status: overrides.status ?? "pending",
     scheduledStart: overrides.scheduledStart ?? null,
     scheduledEnd: overrides.scheduledEnd ?? null,
-    quadrant: overrides.quadrant ?? null,
+    quadrant: overrides.quadrant === undefined ? "urgent-important" : overrides.quadrant,
     source: overrides.source ?? null,
     sourceId: overrides.sourceId ?? null,
     createdAt: "2026-05-23T00:00:00.000Z",
@@ -49,6 +49,14 @@ describe("buildSchedule", () => {
 
   it("does not schedule tasks without deadlines", () => {
     const plan = buildSchedule([task({ id: 1, deadline: null })], new Date("2026-05-23T01:00:00.000Z"));
+    expect(plan).toHaveLength(0);
+  });
+
+  it("does not schedule inbox tasks without a quadrant", () => {
+    const plan = buildSchedule(
+      [task({ id: 1, deadline: "2026-05-24T10:00:00.000Z", quadrant: null })],
+      new Date("2026-05-23T01:00:00.000Z")
+    );
     expect(plan).toHaveLength(0);
   });
 

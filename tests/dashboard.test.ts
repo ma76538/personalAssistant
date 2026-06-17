@@ -61,6 +61,31 @@ describe("dashboard API", () => {
     expect(invalidResponse.status).toBe(400);
   });
 
+  it("serves and updates calendar settings", async () => {
+    const { repo, baseUrl } = createHarness();
+
+    const getResponse = await fetch(`${baseUrl}/api/calendar-settings`);
+    expect(getResponse.status).toBe(200);
+    const current = (await getResponse.json()) as { accountEmail: string; provider: string };
+    expect(current.accountEmail).toBe("kevin@region.mo");
+    expect(current.provider).toBe("apple-calendar");
+
+    const putResponse = await fetch(`${baseUrl}/api/calendar-settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountEmail: "calendar@example.com" })
+    });
+    expect(putResponse.status).toBe(200);
+    expect(repo.getSetting("calendar_account_email")).toBe("calendar@example.com");
+
+    const invalidResponse = await fetch(`${baseUrl}/api/calendar-settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountEmail: "not-an-email" })
+    });
+    expect(invalidResponse.status).toBe(400);
+  });
+
   it("creates, edits, and completes a task", async () => {
     const { repo, baseUrl } = createHarness();
 
@@ -132,11 +157,13 @@ describe("dashboard API", () => {
     const { repo, baseUrl } = createHarness();
     repo.addTask({ title: "本月任務", quadrant: "urgent-important", deadline: "2026-06-20T10:00:00.000Z" });
     repo.addTask({ title: "待補日期", quadrant: "not-urgent-important" });
+    repo.addTask({ title: "純待定任務" });
 
     const response = await fetch(`${baseUrl}/api/summary`);
     const payload = (await response.json()) as {
       month: unknown[];
       calendar: { accountEmail: string; connected: boolean; events: unknown[] };
+      pendingBucket: Array<{ title: string }>;
       missingDeadlines: Array<{ title: string }>;
       scheduleSegments: unknown[];
     };
@@ -146,7 +173,9 @@ describe("dashboard API", () => {
     expect(payload.calendar.accountEmail).toBe("kevin@region.mo");
     expect(payload.calendar.connected).toBe(false);
     expect(payload.calendar.events).toEqual([]);
+    expect(payload.pendingBucket.map((task) => task.title)).toContain("純待定任務");
     expect(payload.missingDeadlines.map((task) => task.title)).toContain("待補日期");
+    expect(payload.missingDeadlines.map((task) => task.title)).not.toContain("純待定任務");
     expect(payload.scheduleSegments.length).toBeGreaterThan(0);
   });
 });

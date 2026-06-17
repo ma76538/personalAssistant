@@ -1,7 +1,9 @@
-const state = { tasks: [], summary: null, reminderPolicy: null, search: "" };
+const state = { tasks: [], summary: null, reminderPolicy: null, calendarSettings: null, search: "" };
 const $ = (id) => document.getElementById(id);
 
 const matrixEl = $("matrix");
+const pendingBucketListEl = $("pending-bucket-list");
+const pendingBucketCountEl = $("pending-bucket-count");
 const quickWinsListEl = $("quick-wins-list");
 const quickWinsCountEl = $("quick-wins-count");
 const missingDeadlineListEl = $("missing-deadline-list");
@@ -19,6 +21,7 @@ const taskFormEl = $("task-form");
 const drawerTitleEl = $("drawer-title");
 const reminderSettingsFormEl = $("reminder-settings-form");
 const reminderSettingsStatusEl = $("reminder-settings-status");
+const calendarSettingsStatusEl = $("calendar-settings-status");
 
 let draggedTaskId = null;
 let pointerDrag = null;
@@ -36,6 +39,7 @@ $("task-search").addEventListener("input", (event) => {
   render();
 });
 $("clear-completed").addEventListener("click", clearCompletedBin);
+$("save-calendar-settings").addEventListener("click", saveCalendarSettings);
 reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
 reminderSettingsFormEl.addEventListener("change", scheduleReminderSettingsSave);
 $("reset-reminder-settings").addEventListener("click", resetReminderSettings);
@@ -68,6 +72,7 @@ document.addEventListener("pointerup", handlePointerDragEnd);
 
 quickWinsListEl.addEventListener("click", handleTaskButtonClick);
 missingDeadlineListEl.addEventListener("click", handleTaskButtonClick);
+pendingBucketListEl.addEventListener("click", handleTaskButtonClick);
 
 completedListEl.addEventListener("click", handleTaskButtonClick);
 completedListEl.addEventListener("dragstart", handleDragStart);
@@ -118,12 +123,32 @@ async function handleTaskButtonClick(event) {
   if (button.dataset.action === "edit") return openEditor(task);
   if (button.dataset.action === "delete") await requestJson(`/api/tasks/${id}`, { method: "DELETE" });
   if (button.dataset.action === "restore") await restoreToUrgentImportant(task);
+  if (button.dataset.action === "pending-bucket") await moveTaskToPendingBucket(task);
+  if (button.dataset.action === "quadrant") await updateTaskQuadrant(id, button.dataset.quadrant);
   if (button.dataset.action === "status") await updateTaskStatus(id, button.dataset.status);
   await loadDashboard();
 }
 
 async function updateTaskStatus(id, status) {
   await requestJson(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+}
+
+async function updateTaskQuadrant(id, quadrant) {
+  await requestJson(`/api/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      quadrant,
+      priority: quadrant === "urgent-important" || quadrant === "not-urgent-important" ? 5 : 2,
+      status: "pending"
+    })
+  });
+}
+
+async function moveTaskToPendingBucket(task) {
+  await requestJson(`/api/tasks/${task.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ quadrant: null, status: "pending", scheduledStart: null, scheduledEnd: null })
+  });
 }
 
 async function restoreToUrgentImportant(task) {
@@ -198,19 +223,22 @@ async function handlePointerDragEnd(event) {
 }
 
 async function loadDashboard() {
-  const [summaryResponse, tasksResponse, reminderResponse] = await Promise.all([
+  const [summaryResponse, tasksResponse, reminderResponse, calendarSettingsResponse] = await Promise.all([
     fetch("/api/summary"),
     fetch("/api/tasks"),
-    fetch("/api/reminder-settings")
+    fetch("/api/reminder-settings"),
+    fetch("/api/calendar-settings")
   ]);
   state.summary = await summaryResponse.json();
   state.tasks = (await tasksResponse.json()).tasks;
   state.reminderPolicy = (await reminderResponse.json()).policy;
+  state.calendarSettings = await calendarSettingsResponse.json();
   render();
 }
 
 function render() {
   renderMetrics();
+  renderPendingBucket();
   renderQuickWins();
   renderMissingDeadlines();
   renderMatrix();
@@ -219,12 +247,37 @@ function render() {
   renderCompletedBin();
   renderFocusList();
   renderReminderSettings();
+  renderCalendarSettings();
   lastUpdatedEl.textContent = `更新於 ${new Intl.DateTimeFormat("zh-Hant", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
     hour12: false
   }).format(new Date())}`;
+}
+
+function renderPendingBucket() {
+  const tasks = filtered(state.summary?.pendingBucket || []).filter((task) => !isQuickWin(task));
+  pendingBucketCountEl.textContent = String(tasks.length);
+  pendingBucketListEl.innerHTML = tasks.length
+    ? tasks.map(pendingTask).join("")
+    : `<div class="drop-empty">沒有待定任務。未決定幾時做的事會放在這裡。</div>`;
+}
+
+function pendingTask(task) {
+  return `<article class="pending-task priority-${task.priority}" data-id="${task.id}">
+    <span class="priority-bar"></span>
+    <div class="pending-task-main">
+      <strong>${esc(task.title)}</strong>
+      <small>${task.deadline ? `Due ${shortMonthDay(task.deadline)}` : "未決定時間，不進排程"}</small>
+    </div>
+    <div class="pending-actions">
+      <button data-action="quadrant" data-quadrant="urgent-important" data-id="${task.id}" type="button">緊急重要</button>
+      <button data-action="quadrant" data-quadrant="not-urgent-important" data-id="${task.id}" type="button">不緊急重要</button>
+      <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
+      <button data-action="status" data-status="done" data-id="${task.id}" type="button">完成</button>
+    </div>
+  </article>`;
 }
 
 function filtered(tasks) {
@@ -346,6 +399,7 @@ function taskRow(task, rank) {
       <button class="${status === "pending" ? "active" : ""}" data-action="status" data-status="pending" data-id="${task.id}" type="button">待定</button>
       <button class="${status === "in_progress" ? "active" : ""}" data-action="status" data-status="in_progress" data-id="${task.id}" type="button">進行中</button>
       <button data-action="status" data-status="done" data-id="${task.id}" type="button">完成</button>
+      <button data-action="pending-bucket" data-id="${task.id}" type="button">放待定</button>
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
     </div>
   </article>`;
@@ -445,6 +499,30 @@ function renderCalendar() {
     .join("");
 }
 
+function renderCalendarSettings() {
+  const settings = state.calendarSettings;
+  if (!settings) return;
+  setValue("calendar-account-email", settings.accountEmail);
+  calendarSettingsStatusEl.textContent = `${settings.provider || "apple-calendar"}｜${settings.oauthStatus || "not_required"}`;
+  const note = $("calendar-oauth-note");
+  if (note) note.textContent = settings.note || "日曆設定已載入。";
+}
+
+async function saveCalendarSettings() {
+  try {
+    const response = await requestJson("/api/calendar-settings", {
+      method: "PUT",
+      body: JSON.stringify({ accountEmail: $("calendar-account-email").value.trim() })
+    });
+    state.calendarSettings = response;
+    renderCalendarSettings();
+    await loadDashboard();
+    lastUpdatedEl.textContent = "日曆設定已儲存，已重新載入月曆。";
+  } catch (error) {
+    calendarSettingsStatusEl.textContent = error instanceof Error ? `儲存失敗：${error.message}` : "儲存失敗";
+  }
+}
+
 function renderFocusList() {
   const priorities = state.summary?.topPriorities || [];
   focusListEl.innerHTML = priorities.length
@@ -456,7 +534,7 @@ function openEditor(task = null) {
   drawerTitleEl.textContent = task ? `編輯 #${task.id}` : "新增任務";
   $("task-id").value = task?.id ?? "";
   $("title").value = task?.title ?? "";
-  $("task-quadrant").value = task?.quadrant ?? "not-urgent-important";
+  $("task-quadrant").value = task?.quadrant ?? "";
   $("durationMinutes").value = task?.durationMinutes ?? 30;
   $("priority").value = task?.priority ?? 3;
   $("task-status").value = normalizeStatusValue(task?.status ?? "pending");
@@ -479,7 +557,7 @@ function formPayload() {
     title: $("title").value.trim(),
     durationMinutes: Number($("durationMinutes").value),
     priority: Number($("priority").value),
-    quadrant: $("task-quadrant").value,
+    quadrant: $("task-quadrant").value || null,
     status: $("task-status").value,
     earliestStart: fromLocalInputValue($("earliestStart").value),
     deadline: fromLocalInputValue($("deadline").value)
