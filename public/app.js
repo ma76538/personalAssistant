@@ -26,17 +26,13 @@ let pointerDrag = null;
 let lastMovedTaskId = null;
 let lastDueWarningTaskId = null;
 let reminderSettingsSaveTimer = null;
+let editingTask = null;
 
 $("refresh").addEventListener("click", loadDashboard);
 $("new-task").addEventListener("click", () => openEditor());
 $("close-drawer").addEventListener("click", closeEditor);
 $("cancel-edit").addEventListener("click", closeEditor);
 drawerBackdropEl.addEventListener("click", closeEditor);
-$("quick-win-toggle").addEventListener("change", (event) => {
-  if (event.target.checked) {
-    $("durationMinutes").value = 2;
-  }
-});
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
 reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
@@ -540,14 +536,12 @@ function renderFocusList() {
 }
 
 function openEditor(task = null) {
+  editingTask = task;
   drawerTitleEl.textContent = task ? `編輯 #${task.id}` : "新增任務";
   $("task-id").value = task?.id ?? "";
   $("title").value = task?.title ?? "";
   $("task-quadrant").value = task?.quadrant ?? "pending-bucket";
-  $("durationMinutes").value = task?.durationMinutes ?? 30;
   $("quick-win-toggle").checked = Boolean(task && task.durationMinutes <= 2);
-  $("priority").value = task?.priority ?? 3;
-  $("task-status").value = normalizeStatusValue(task?.status ?? "pending");
   $("earliestStart").value = toLocalInputValue(task?.earliestStart);
   $("deadline").value = toLocalInputValue(task?.deadline);
   drawerBackdropEl.hidden = false;
@@ -556,6 +550,7 @@ function openEditor(task = null) {
 }
 
 function closeEditor() {
+  editingTask = null;
   drawerBackdropEl.hidden = true;
   drawerEl.setAttribute("aria-hidden", "true");
   document.body.classList.remove("drawer-open");
@@ -563,15 +558,18 @@ function closeEditor() {
 }
 
 function formPayload() {
-  return {
+  const payload = {
     title: $("title").value.trim(),
-    durationMinutes: $("quick-win-toggle").checked ? 2 : Number($("durationMinutes").value),
-    priority: Number($("priority").value),
     quadrant: $("task-quadrant").value === "pending-bucket" ? null : $("task-quadrant").value,
-    status: $("task-status").value,
     earliestStart: fromLocalInputValue($("earliestStart").value),
     deadline: fromLocalInputValue($("deadline").value)
   };
+  if ($("quick-win-toggle").checked) {
+    payload.durationMinutes = 2;
+  } else if (editingTask?.durationMinutes <= 2) {
+    payload.durationMinutes = 30;
+  }
+  return payload;
 }
 
 function renderReminderSettings() {
@@ -720,11 +718,19 @@ function shortMonthDay(value) {
 function toLocalInputValue(value) {
   if (!value) return "";
   const date = new Date(value);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const [day, time] = local.split("T");
+  const [year, month, dateOfMonth] = day.split("-");
+  return `${year} - ${month} - ${dateOfMonth} ${time}`;
 }
 
 function fromLocalInputValue(value) {
-  return value ? new Date(value).toISOString() : null;
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").replace(" ", "T");
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function esc(value) {
