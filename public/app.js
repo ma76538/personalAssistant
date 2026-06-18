@@ -235,9 +235,9 @@ async function loadDashboard() {
 
 function render() {
   renderMetrics();
+  renderQuickWins();
   renderMatrix();
   renderPendingBucket();
-  renderQuickWins();
   renderGantt();
   renderCalendar();
   renderCompletedBin();
