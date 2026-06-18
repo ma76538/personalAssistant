@@ -156,12 +156,14 @@ describe("dashboard API", () => {
   it("returns monthly calendar data for the dashboard", async () => {
     const { repo, baseUrl } = createHarness();
     repo.addTask({ title: "本月任務", quadrant: "urgent-important", deadline: "2026-06-20T10:00:00.000Z" });
+    const dueOnly = repo.addTask({ title: "按期限入月曆", quadrant: "urgent-important", deadline: "2026-06-25T10:00:00.000Z" });
+    repo.updateTask(dueOnly.id, { scheduledStart: "2026-07-01T10:00:00.000Z", scheduledEnd: "2026-07-01T10:30:00.000Z" });
     repo.addTask({ title: "待補日期", quadrant: "not-urgent-important" });
     repo.addTask({ title: "純待定任務" });
 
     const response = await fetch(`${baseUrl}/api/summary`);
     const payload = (await response.json()) as {
-      month: unknown[];
+      month: Array<{ title: string; deadline: string | null; scheduledStart: string | null }>;
       calendar: { accountEmail: string; connected: boolean; events: unknown[] };
       pendingBucket: Array<{ title: string }>;
       missingDeadlines: Array<{ title: string }>;
@@ -170,6 +172,8 @@ describe("dashboard API", () => {
 
     expect(response.status).toBe(200);
     expect(Array.isArray(payload.month)).toBe(true);
+    expect(payload.month.map((task) => task.title)).toContain("按期限入月曆");
+    expect(payload.month.find((task) => task.title === "按期限入月曆")?.deadline).toBe("2026-06-25T10:00:00.000Z");
     expect(payload.calendar.accountEmail).toBe("kevin@region.mo");
     expect(payload.calendar.connected).toBe(false);
     expect(payload.calendar.events).toEqual([]);

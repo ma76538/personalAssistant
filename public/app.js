@@ -488,7 +488,7 @@ function renderCalendar() {
     : `未連結 ${calendar.accountEmail}${calendar.error ? `：${calendar.error}` : ""}`;
   calendarBoardEl.innerHTML = days
     .map((day) => {
-      const tasks = monthTasks.filter((task) => sameLocalDay(task.scheduledStart, day));
+      const tasks = monthTasks.filter((task) => sameLocalDay(task.deadline, day));
       const events = (calendar.events || []).filter((event) => sameLocalDay(event.start, day));
       const isOutside = day.getMonth() !== new Date().getMonth();
       return `<article class="calendar-day ${sameLocalDay(day.toISOString(), new Date()) ? "today" : ""} ${isOutside ? "outside-month" : ""}">
@@ -497,7 +497,7 @@ function renderCalendar() {
           tasks.length || events.length
             ? [
                 ...events.map((event) => `<div class="calendar-item event"><i></i><span>${event.allDay ? "全日" : timeRange(event.start, event.end)}</span><strong>${esc(event.title)}</strong></div>`),
-                ...tasks.map((task) => `<div class="calendar-item priority-${task.priority}"><i class="priority-bar"></i><span>${timeRange(task.scheduledStart, task.scheduledEnd)}</span><strong>${esc(task.title)}</strong></div>`)
+                ...tasks.map((task) => `<div class="calendar-item priority-${task.priority}"><i class="priority-bar"></i><span>Due ${fmtTime(task.deadline)}</span><strong>${esc(task.title)}</strong></div>`)
               ].join("")
             : `<p>未安排</p>`
         }</div>

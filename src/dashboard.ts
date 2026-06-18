@@ -173,7 +173,9 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
         overdue: tasks.filter((task) => task.deadline && task.status !== "done" && new Date(task.deadline) < now).length,
         today: repo.listScheduledBetween(todayStart, todayEnd),
         week: repo.listScheduledBetween(todayStart, weekEnd),
-        month: repo.listScheduledBetween(monthStart, monthEnd),
+        month: tasks
+          .filter((task) => task.deadline && task.deadline >= monthStart && task.deadline < monthEnd && !["done", "cancelled"].includes(task.status))
+          .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()),
         calendar,
         completed,
         topPriorities: actionablePriorities.slice(0, 5),
