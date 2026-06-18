@@ -296,7 +296,9 @@ function pendingTask(task) {
     </div>
     <div class="pending-actions">
       <button data-action="quadrant" data-quadrant="urgent-important" data-id="${task.id}" type="button">緊急重要</button>
+      <button data-action="quadrant" data-quadrant="urgent-not-important" data-id="${task.id}" type="button">緊急不重要</button>
       <button data-action="quadrant" data-quadrant="not-urgent-important" data-id="${task.id}" type="button">不緊急重要</button>
+      <button data-action="quadrant" data-quadrant="not-urgent-not-important" data-id="${task.id}" type="button">不緊急不重要</button>
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
       <button data-action="status" data-status="done" data-id="${task.id}" type="button">完成</button>
     </div>
@@ -541,7 +543,7 @@ function openEditor(task = null) {
   drawerTitleEl.textContent = task ? `編輯 #${task.id}` : "新增任務";
   $("task-id").value = task?.id ?? "";
   $("title").value = task?.title ?? "";
-  $("task-quadrant").value = task?.quadrant ?? "";
+  $("task-quadrant").value = task?.quadrant ?? "pending-bucket";
   $("durationMinutes").value = task?.durationMinutes ?? 30;
   $("quick-win-toggle").checked = Boolean(task && task.durationMinutes <= 2);
   $("priority").value = task?.priority ?? 3;
@@ -565,7 +567,7 @@ function formPayload() {
     title: $("title").value.trim(),
     durationMinutes: $("quick-win-toggle").checked ? 2 : Number($("durationMinutes").value),
     priority: Number($("priority").value),
-    quadrant: $("task-quadrant").value || null,
+    quadrant: $("task-quadrant").value === "pending-bucket" ? null : $("task-quadrant").value,
     status: $("task-status").value,
     earliestStart: fromLocalInputValue($("earliestStart").value),
     deadline: fromLocalInputValue($("deadline").value)
