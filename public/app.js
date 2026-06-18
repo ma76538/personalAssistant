@@ -66,6 +66,8 @@ matrixEl.addEventListener("pointerdown", handlePointerDragStart);
 document.addEventListener("pointerup", handlePointerDragEnd);
 
 quickWinsListEl.addEventListener("click", handleTaskButtonClick);
+quickWinsListEl.addEventListener("dragstart", handleDragStart);
+quickWinsListEl.addEventListener("dragend", handleDragEnd);
 quickWinsListEl.addEventListener("dragover", (event) => {
   if (!draggedTaskId) return;
   event.preventDefault();
@@ -79,6 +81,7 @@ quickWinsListEl.addEventListener("drop", async (event) => {
   await moveTaskToQuickWins(draggedTaskId);
   await loadDashboard();
 });
+quickWinsListEl.addEventListener("pointerdown", handlePointerDragStart);
 pendingBucketListEl.addEventListener("click", handleTaskButtonClick);
 
 completedListEl.addEventListener("click", handleTaskButtonClick);
@@ -186,6 +189,7 @@ async function moveTaskToQuadrant(taskId, quadrant) {
     priority: quadrant.dataset.important === "true" ? 5 : 2,
     status: "pending"
   };
+  if (task.durationMinutes <= 2) payload.durationMinutes = 30;
   await requestJson(`/api/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(payload) });
   lastMovedTaskId = task.id;
   lastDueWarningTaskId = isUrgentQuadrant(targetQuadrant) && !task.deadline ? task.id : null;
@@ -198,7 +202,7 @@ async function moveTaskToQuadrant(taskId, quadrant) {
 }
 
 function handleDragStart(event) {
-  const card = event.target.closest(".task-row,.completed-task");
+  const card = event.target.closest(".task-row,.quick-task,.completed-task");
   if (!card) return;
   draggedTaskId = Number(card.dataset.id);
   event.dataTransfer.effectAllowed = "move";
@@ -207,14 +211,14 @@ function handleDragStart(event) {
 }
 
 function handleDragEnd(event) {
-  event.target.closest(".task-row,.completed-task")?.classList.remove("dragging");
+  event.target.closest(".task-row,.quick-task,.completed-task")?.classList.remove("dragging");
   document.querySelectorAll(".drop-target").forEach((item) => item.classList.remove("drop-target"));
   draggedTaskId = null;
 }
 
 function handlePointerDragStart(event) {
   if (event.target.closest("button, input, select, textarea, a")) return;
-  const card = event.target.closest(".task-row,.completed-task");
+  const card = event.target.closest(".task-row,.quick-task,.completed-task");
   if (!card) return;
   pointerDrag = {
     id: Number(card.dataset.id),
@@ -363,7 +367,7 @@ function renderQuickWins() {
 }
 
 function quickWinRow(task) {
-  return `<article class="quick-task priority-${task.priority}" data-id="${task.id}">
+  return `<article class="quick-task priority-${task.priority}" draggable="true" data-id="${task.id}">
     <span class="priority-bar"></span>
     <div class="quick-task-main">
       <strong>${esc(task.title)}</strong>
