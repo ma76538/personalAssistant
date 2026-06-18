@@ -6,8 +6,6 @@ const pendingBucketListEl = $("pending-bucket-list");
 const pendingBucketCountEl = $("pending-bucket-count");
 const quickWinsListEl = $("quick-wins-list");
 const quickWinsCountEl = $("quick-wins-count");
-const missingDeadlineListEl = $("missing-deadline-list");
-const missingDeadlineCountEl = $("missing-deadline-count");
 const ganttBoardEl = $("gantt-board");
 const calendarBoardEl = $("calendar-board");
 const calendarStatusEl = $("calendar-status");
@@ -71,7 +69,6 @@ matrixEl.addEventListener("pointerdown", handlePointerDragStart);
 document.addEventListener("pointerup", handlePointerDragEnd);
 
 quickWinsListEl.addEventListener("click", handleTaskButtonClick);
-missingDeadlineListEl.addEventListener("click", handleTaskButtonClick);
 pendingBucketListEl.addEventListener("click", handleTaskButtonClick);
 
 completedListEl.addEventListener("click", handleTaskButtonClick);
@@ -238,10 +235,9 @@ async function loadDashboard() {
 
 function render() {
   renderMetrics();
+  renderMatrix();
   renderPendingBucket();
   renderQuickWins();
-  renderMissingDeadlines();
-  renderMatrix();
   renderGantt();
   renderCalendar();
   renderCompletedBin();
@@ -339,22 +335,6 @@ function renderQuickWins() {
   quickWinsListEl.innerHTML = tasks.length
     ? tasks.map(quickWinRow).join("")
     : `<div class="drop-empty">沒有 2 分鐘內可完成的任務。</div>`;
-}
-
-function renderMissingDeadlines() {
-  const tasks = filtered(state.summary?.missingDeadlines || []).filter((task) => !isQuickWin(task));
-  missingDeadlineCountEl.textContent = String(tasks.length);
-  missingDeadlineListEl.innerHTML = tasks.length
-    ? tasks
-        .map(
-          (task) => `<article class="deadline-task priority-${task.priority}" data-id="${task.id}">
-            <span class="priority-bar"></span>
-            <div><strong>${esc(task.title)}</strong><p>未有 deadline，暫不排程/提醒。</p></div>
-            <button data-action="edit" data-id="${task.id}" type="button">補 Deadline</button>
-          </article>`
-        )
-        .join("")
-    : `<div class="drop-empty">所有未完成任務都有 deadline。</div>`;
 }
 
 function quickWinRow(task) {
