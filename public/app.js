@@ -32,9 +32,10 @@ $("new-task").addEventListener("click", () => openEditor());
 $("close-drawer").addEventListener("click", closeEditor);
 $("cancel-edit").addEventListener("click", closeEditor);
 drawerBackdropEl.addEventListener("click", closeEditor);
-$("task-search").addEventListener("input", (event) => {
-  state.search = event.target.value.trim().toLowerCase();
-  render();
+$("quick-win-toggle").addEventListener("change", (event) => {
+  if (event.target.checked) {
+    $("durationMinutes").value = 2;
+  }
 });
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
@@ -69,6 +70,19 @@ matrixEl.addEventListener("pointerdown", handlePointerDragStart);
 document.addEventListener("pointerup", handlePointerDragEnd);
 
 quickWinsListEl.addEventListener("click", handleTaskButtonClick);
+quickWinsListEl.addEventListener("dragover", (event) => {
+  if (!draggedTaskId) return;
+  event.preventDefault();
+  quickWinsListEl.classList.add("drop-target");
+});
+quickWinsListEl.addEventListener("dragleave", () => quickWinsListEl.classList.remove("drop-target"));
+quickWinsListEl.addEventListener("drop", async (event) => {
+  if (!draggedTaskId) return;
+  event.preventDefault();
+  quickWinsListEl.classList.remove("drop-target");
+  await moveTaskToQuickWins(draggedTaskId);
+  await loadDashboard();
+});
 pendingBucketListEl.addEventListener("click", handleTaskButtonClick);
 
 completedListEl.addEventListener("click", handleTaskButtonClick);
@@ -148,6 +162,13 @@ async function moveTaskToPendingBucket(task) {
   });
 }
 
+async function moveTaskToQuickWins(taskId) {
+  await requestJson(`/api/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ durationMinutes: 2, status: "pending" })
+  });
+}
+
 async function restoreToUrgentImportant(task) {
   await requestJson(`/api/tasks/${task.id}`, {
     method: "PATCH",
@@ -215,6 +236,12 @@ async function handlePointerDragEnd(event) {
   const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
   if (distance < 12) return;
   const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".matrix-card");
+  const quickWinsTarget = document.elementFromPoint(event.clientX, event.clientY)?.closest("#quick-wins");
+  if (quickWinsTarget) {
+    await moveTaskToQuickWins(drag.id);
+    await loadDashboard();
+    return;
+  }
   if (!target) return;
   await moveTaskToQuadrant(drag.id, target);
 }
@@ -516,6 +543,7 @@ function openEditor(task = null) {
   $("title").value = task?.title ?? "";
   $("task-quadrant").value = task?.quadrant ?? "";
   $("durationMinutes").value = task?.durationMinutes ?? 30;
+  $("quick-win-toggle").checked = Boolean(task && task.durationMinutes <= 2);
   $("priority").value = task?.priority ?? 3;
   $("task-status").value = normalizeStatusValue(task?.status ?? "pending");
   $("earliestStart").value = toLocalInputValue(task?.earliestStart);
@@ -535,7 +563,7 @@ function closeEditor() {
 function formPayload() {
   return {
     title: $("title").value.trim(),
-    durationMinutes: Number($("durationMinutes").value),
+    durationMinutes: $("quick-win-toggle").checked ? 2 : Number($("durationMinutes").value),
     priority: Number($("priority").value),
     quadrant: $("task-quadrant").value || null,
     status: $("task-status").value,
