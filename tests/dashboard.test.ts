@@ -86,6 +86,40 @@ describe("dashboard API", () => {
     expect(invalidResponse.status).toBe(400);
   });
 
+  it("serves work capacity settings and replans after updates", async () => {
+    const { repo, baseUrl } = createHarness();
+    repo.addTask({
+      title: "容量測試",
+      durationMinutes: 90,
+      deadline: "2026-06-25T10:00:00.000Z",
+      quadrant: "urgent-important",
+      deadlineType: "hard",
+      valueScore: 5
+    });
+
+    const getResponse = await fetch(`${baseUrl}/api/work-capacity`);
+    expect(getResponse.status).toBe(200);
+    const current = (await getResponse.json()) as { dailyWorkCapacityHours: number; secretaryMvpMode: boolean };
+    expect(current.dailyWorkCapacityHours).toBe(3);
+    expect(current.secretaryMvpMode).toBe(true);
+
+    const putResponse = await fetch(`${baseUrl}/api/work-capacity`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dailyWorkCapacityHours: 1.5, secretaryMvpMode: false })
+    });
+    expect(putResponse.status).toBe(200);
+    expect(repo.getWorkSettings().dailyWorkCapacityHours).toBe(1.5);
+    expect(repo.listAllTasks()[0].scheduledStart).not.toBeNull();
+
+    const invalidResponse = await fetch(`${baseUrl}/api/work-capacity`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dailyWorkCapacityHours: 0, secretaryMvpMode: true })
+    });
+    expect(invalidResponse.status).toBe(400);
+  });
+
   it("creates, edits, and completes a task", async () => {
     const { repo, baseUrl } = createHarness();
 
@@ -97,12 +131,17 @@ describe("dashboard API", () => {
         durationMinutes: 45,
         priority: 4,
         energy: "high",
-        context: "dashboard test"
+        context: "dashboard test",
+        valueScore: 5,
+        deadlineType: "soft",
+        isProject: true,
+        progressNote: "先建立目標"
       })
     });
     expect(createResponse.status).toBe(201);
-    const created = (await createResponse.json()) as { task: { id: number; title: string } };
+    const created = (await createResponse.json()) as { task: { id: number; title: string; valueScore: number } };
     expect(created.task.title).toBe("後台新增任務");
+    expect(created.task.valueScore).toBe(5);
 
     const patchResponse = await fetch(`${baseUrl}/api/tasks/${created.task.id}`, {
       method: "PATCH",
@@ -136,6 +175,55 @@ describe("dashboard API", () => {
     const deleteResponse = await fetch(`${baseUrl}/api/tasks/${created.task.id}`, { method: "DELETE" });
     expect(deleteResponse.status).toBe(200);
     expect(repo.getTask(created.task.id)).toBeNull();
+  });
+
+  it("supports pending review, check-in, and next action preview", async () => {
+    const { repo, baseUrl } = createHarness();
+    const pending = repo.addTask({ title: "Siri 快速記低", durationMinutes: 120 });
+    const project = repo.addTask({
+      title: "電子秘書 MVP",
+      durationMinutes: 600,
+      deadline: "2026-06-30T10:00:00.000Z",
+      deadlineType: "hard",
+      valueScore: 5,
+      isProject: true,
+      quadrant: "urgent-important"
+    });
+
+    const reviewResponse = await fetch(`${baseUrl}/api/pending-review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit: 5 })
+    });
+    const review = (await reviewResponse.json()) as { items: Array<{ task: { id: number }; suggestion: { isProject: boolean; clarificationQuestions: string[] } }> };
+    expect(reviewResponse.status).toBe(200);
+    expect(review.items.some((item) => item.task.id === pending.id)).toBe(true);
+    expect(review.items[0].suggestion.clarificationQuestions.length).toBeGreaterThan(0);
+
+    const nextResponse = await fetch(`${baseUrl}/api/projects/${project.id}/next-action-preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ progressNote: "已完成同步" })
+    });
+    const next = (await nextResponse.json()) as { action: { title: string; durationMinutes: number } };
+    expect(nextResponse.status).toBe(200);
+    expect(next.action.title).toContain("電子秘書 MVP");
+    expect(next.action.durationMinutes).toBe(60);
+
+    const triageResponse = await fetch(`${baseUrl}/api/tasks/${project.id}/triage-preview`, { method: "POST" });
+    const triage = (await triageResponse.json()) as { suggestion: { valueScore: number; recommendedQuadrant: string | null } };
+    expect(triageResponse.status).toBe(200);
+    expect(triage.suggestion.valueScore).toBe(5);
+    expect(triage.suggestion.recommendedQuadrant).toBe("not-urgent-important");
+
+    const checkInResponse = await fetch(`${baseUrl}/api/tasks/${project.id}/check-in`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outcome: "stuck", note: "Calendar 權限未開" })
+    });
+    expect(checkInResponse.status).toBe(200);
+    expect(repo.getTask(project.id)?.status).toBe("in_progress");
+    expect(repo.getTask(project.id)?.progressNote).toContain("Calendar 權限未開");
   });
 
   it("clears completed tasks", async () => {

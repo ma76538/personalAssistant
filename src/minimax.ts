@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AppConfig } from "./config.js";
 import { parseFallbackAction } from "./fallbackParser.js";
-import { ParsedAction, ParsedActionSchema, PriorityReview, PriorityReviewSchema, Task } from "./types.js";
+import { NextActionSuggestion, NextActionSuggestionSchema, ParsedAction, ParsedActionSchema, PriorityReview, PriorityReviewSchema, Task, TaskTriageResult, TaskTriageResultSchema } from "./types.js";
 
 type MiniMaxMessage = {
   role: "system" | "user" | "assistant";
@@ -33,6 +33,14 @@ const ParsedActionResultSchema = z.preprocess((value) => {
 
 const PriorityReviewResultSchema = z.object({
   reviews: z.array(PriorityReviewSchema)
+});
+
+const TaskTriageResponseSchema = z.object({
+  result: TaskTriageResultSchema
+});
+
+const NextActionResponseSchema = z.object({
+  action: NextActionSuggestionSchema
 });
 
 export class MiniMaxClient {
@@ -134,6 +142,63 @@ export class MiniMaxClient {
     });
     const result = await this.requestJson([this.message("system", system), this.message("user", user)], PriorityReviewResultSchema);
     return result.reviews;
+  }
+
+  async triageTask(input: { task: Task; now: Date; dailyWorkCapacityHours: number; secretaryMvpMode: boolean }): Promise<TaskTriageResult> {
+    const system = [
+      "你是電子秘書的任務分類器。只輸出 JSON object，不要 Markdown，不要解釋。",
+      "四象限仍是最終分類；你要用重要/緊急兩條軸推斷 recommendedQuadrant。",
+      "公司方向第一版固定為：大健康／展品設備。",
+      "價值分 5=電子秘書 MVP 或有 PO/金主且符合方向；4=有 PO/金主但不符合方向；3=無 PO 但符合方向；2=無 PO 不符合方向但可能找到金主；1=沒有商業路徑。",
+      "hard deadline 是客戶、PO、政府、合約、比賽、會議前材料、交付等外部後果；soft deadline 是使用者自己定的推進目標。",
+      "如果資料不足，recommendedQuadrant 可為 null，並在 clarificationQuestions 提問。"
+    ].join("\n");
+    const user = JSON.stringify({
+      now: input.now.toISOString(),
+      dailyWorkCapacityHours: input.dailyWorkCapacityHours,
+      secretaryMvpMode: input.secretaryMvpMode,
+      task: input.task,
+      schema: {
+        result: {
+          valueScore: "1..5",
+          deadlineType: "none|soft|hard",
+          recommendedQuadrant: "urgent-important|urgent-not-important|not-urgent-important|not-urgent-not-important|null",
+          isProject: "boolean",
+          estimatedMinutes: "positive integer optional",
+          nextActionTitle: "string optional",
+          clarificationQuestions: "string array",
+          reason: "string"
+        }
+      }
+    });
+    const result = await this.requestJson([this.message("system", system), this.message("user", user)], TaskTriageResponseSchema);
+    return result.result;
+  }
+
+  async suggestNextAction(input: { project: Task; progressNote?: string | null; now: Date }): Promise<NextActionSuggestion> {
+    const system = [
+      "你是電子秘書的項目下一步助理。只輸出 JSON object，不要 Markdown，不要解釋。",
+      "根據項目目標、進度和卡點，建議下一個 60-90 分鐘可執行動作。",
+      "不要建議空泛動作；標題要像可以直接放入 Reminders 的任務。",
+      "你只產生 preview，不能直接寫入資料庫。"
+    ].join("\n");
+    const user = JSON.stringify({
+      now: input.now.toISOString(),
+      project: input.project,
+      progressNote: input.progressNote,
+      schema: {
+        action: {
+          title: "string",
+          durationMinutes: "15..120, prefer 60..90",
+          deadline: "ISO datetime or null optional",
+          earliestStart: "ISO datetime or null optional",
+          reason: "string",
+          clarificationQuestion: "string optional"
+        }
+      }
+    });
+    const result = await this.requestJson([this.message("system", system), this.message("user", user)], NextActionResponseSchema);
+    return result.action;
   }
 
   private async requestJson<T>(messages: MiniMaxMessage[], schema: z.ZodType<T>): Promise<T> {

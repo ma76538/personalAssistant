@@ -16,6 +16,11 @@ function task(overrides: Partial<Task>): Task {
     scheduledStart: overrides.scheduledStart ?? null,
     scheduledEnd: overrides.scheduledEnd ?? null,
     quadrant: overrides.quadrant === undefined ? "urgent-important" : overrides.quadrant,
+    valueScore: overrides.valueScore ?? 3,
+    deadlineType: overrides.deadlineType ?? "hard",
+    isProject: overrides.isProject ?? false,
+    projectId: overrides.projectId ?? null,
+    progressNote: overrides.progressNote ?? null,
     source: overrides.source ?? null,
     sourceId: overrides.sourceId ?? null,
     createdAt: "2026-05-23T00:00:00.000Z",
@@ -65,9 +70,27 @@ describe("buildSchedule", () => {
       [task({ id: 1, durationMinutes: 300, deadline: "2026-05-27T10:00:00.000Z" })],
       new Date("2026-05-23T01:00:00.000Z")
     );
+    expect(plan).toHaveLength(4);
+    expect(plan.map((item) => item.segmentIndex)).toEqual([1, 2, 3, 4]);
+    expect(plan.every((item) => item.segmentCount === 4)).toBe(true);
+    expect(plan.every((item) => (new Date(item.scheduledEnd).getTime() - new Date(item.scheduledStart).getTime()) / 60000 <= 90)).toBe(true);
+  });
+
+  it("limits each day by daily work capacity", () => {
+    const plan = buildSchedule(
+      [
+        task({ id: 1, durationMinutes: 90, deadline: "2026-05-27T10:00:00.000Z" }),
+        task({ id: 2, durationMinutes: 90, deadline: "2026-05-27T10:00:00.000Z" }),
+        task({ id: 3, durationMinutes: 90, deadline: "2026-05-27T10:00:00.000Z" })
+      ],
+      new Date("2026-05-23T01:00:00.000Z"),
+      [],
+      { dailyCapacityHours: 1.5 }
+    );
+
     expect(plan).toHaveLength(3);
-    expect(plan.map((item) => item.segmentIndex)).toEqual([1, 2, 3]);
-    expect(plan.every((item) => item.segmentCount === 3)).toBe(true);
+    const days = new Set(plan.map((item) => new Date(item.scheduledStart).toDateString()));
+    expect(days.size).toBe(3);
   });
 
   it("avoids busy calendar blocks", () => {

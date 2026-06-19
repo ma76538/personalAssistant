@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { DEFAULT_REMINDER_POLICY, PendingAction, PendingActionSchema, ReminderPolicy, ReminderPolicySchema, ReminderStage, Task } from "./types.js";
+import { DEFAULT_REMINDER_POLICY, DeadlineType, DEFAULT_WORK_SETTINGS, PendingAction, PendingActionSchema, ReminderPolicy, ReminderPolicySchema, ReminderStage, Task, WorkSettings, WorkSettingsSchema } from "./types.js";
 import { nowIso } from "./time.js";
 
 export class AssistantRepository {
@@ -66,6 +66,11 @@ export class AssistantRepository {
     this.ensureColumn("tasks", "source", "TEXT");
     this.ensureColumn("tasks", "source_id", "TEXT");
     this.ensureColumn("tasks", "quadrant", "TEXT");
+    this.ensureColumn("tasks", "value_score", "INTEGER NOT NULL DEFAULT 3");
+    this.ensureColumn("tasks", "deadline_type", "TEXT NOT NULL DEFAULT 'none'");
+    this.ensureColumn("tasks", "is_project", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("tasks", "project_id", "INTEGER");
+    this.ensureColumn("tasks", "progress_note", "TEXT");
     this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_source ON tasks (source, source_id) WHERE source IS NOT NULL AND source_id IS NOT NULL");
   }
 
@@ -85,6 +90,11 @@ export class AssistantRepository {
     energy?: string;
     context?: string | null;
     quadrant?: Task["quadrant"];
+    valueScore?: number;
+    deadlineType?: DeadlineType;
+    isProject?: boolean;
+    projectId?: number | null;
+    progressNote?: string | null;
     source?: string | null;
     sourceId?: string | null;
   }): Task {
@@ -92,10 +102,12 @@ export class AssistantRepository {
     const statement = this.db.prepare(`
       INSERT INTO tasks (
         title, duration_minutes, deadline, earliest_start, priority, energy, context,
-        quadrant, source, source_id, status, created_at, updated_at
+        quadrant, value_score, deadline_type, is_project, project_id, progress_note,
+        source, source_id, status, created_at, updated_at
       ) VALUES (
         @title, @durationMinutes, @deadline, @earliestStart, @priority, @energy, @context,
-        @quadrant, @source, @sourceId, 'pending', @createdAt, @updatedAt
+        @quadrant, @valueScore, @deadlineType, @isProject, @projectId, @progressNote,
+        @source, @sourceId, 'pending', @createdAt, @updatedAt
       )
     `);
     const result = statement.run({
@@ -107,6 +119,11 @@ export class AssistantRepository {
       energy: input.energy ?? "medium",
       context: input.context ?? null,
       quadrant: input.quadrant ?? null,
+      valueScore: input.valueScore ?? 3,
+      deadlineType: input.deadlineType ?? "none",
+      isProject: input.isProject ? 1 : 0,
+      projectId: input.projectId ?? null,
+      progressNote: input.progressNote ?? null,
       source: input.source ?? null,
       sourceId: input.sourceId ?? null,
       createdAt: timestamp,
@@ -126,6 +143,11 @@ export class AssistantRepository {
     energy?: string;
     context?: string | null;
     quadrant?: Task["quadrant"];
+    valueScore?: number;
+    deadlineType?: DeadlineType;
+    isProject?: boolean;
+    projectId?: number | null;
+    progressNote?: string | null;
   }): Task {
     const existing = this.db
       .prepare("SELECT * FROM tasks WHERE source = ? AND source_id = ? LIMIT 1")
@@ -144,6 +166,11 @@ export class AssistantRepository {
       energy: (input.energy ?? task.energy) as Task["energy"],
       context: input.context === undefined ? task.context : input.context,
       quadrant: input.quadrant ?? task.quadrant,
+      valueScore: input.valueScore ?? task.valueScore,
+      deadlineType: input.deadlineType ?? task.deadlineType,
+      isProject: input.isProject ?? task.isProject,
+      projectId: input.projectId === undefined ? task.projectId : input.projectId,
+      progressNote: input.progressNote === undefined ? task.progressNote : input.progressNote,
       status: task.status === "done" || task.status === "cancelled" ? "pending" : task.status,
       scheduledStart: null,
       scheduledEnd: null,
@@ -233,12 +260,17 @@ export class AssistantRepository {
           scheduled_start = @scheduledStart,
           scheduled_end = @scheduledEnd,
           quadrant = @quadrant,
+          value_score = @valueScore,
+          deadline_type = @deadlineType,
+          is_project = @isProject,
+          project_id = @projectId,
+          progress_note = @progressNote,
           source = @source,
           source_id = @sourceId,
           updated_at = @updatedAt
         WHERE id = @id`
       )
-      .run(next);
+      .run({ ...next, isProject: next.isProject ? 1 : 0 });
     return this.getTask(id)!;
   }
 
@@ -396,6 +428,31 @@ export class AssistantRepository {
     return this.saveReminderPolicy(DEFAULT_REMINDER_POLICY);
   }
 
+  getWorkSettings(): WorkSettings {
+    const row = this.db.prepare("SELECT value FROM app_settings WHERE key = ?").get("work_settings") as { value?: string } | undefined;
+    if (!row?.value) {
+      return this.saveWorkSettings(DEFAULT_WORK_SETTINGS);
+    }
+
+    try {
+      return WorkSettingsSchema.parse(JSON.parse(row.value));
+    } catch {
+      return this.saveWorkSettings(DEFAULT_WORK_SETTINGS);
+    }
+  }
+
+  saveWorkSettings(settings: WorkSettings): WorkSettings {
+    const parsed = WorkSettingsSchema.parse(settings);
+    this.db
+      .prepare(
+        `INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+      )
+      .run("work_settings", JSON.stringify(parsed), nowIso());
+    return parsed;
+  }
+
   getSetting(key: string, fallback = ""): string {
     const row = this.db.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as { value?: string } | undefined;
     return row?.value ?? fallback;
@@ -426,6 +483,11 @@ export class AssistantRepository {
       scheduledStart: row.scheduled_start ? String(row.scheduled_start) : null,
       scheduledEnd: row.scheduled_end ? String(row.scheduled_end) : null,
       quadrant: row.quadrant ? (String(row.quadrant) as Task["quadrant"]) : null,
+      valueScore: Number(row.value_score ?? 3),
+      deadlineType: (row.deadline_type ? String(row.deadline_type) : "none") as Task["deadlineType"],
+      isProject: Boolean(row.is_project),
+      projectId: row.project_id === null || row.project_id === undefined ? null : Number(row.project_id),
+      progressNote: row.progress_note ? String(row.progress_note) : null,
       source: row.source ? String(row.source) : null,
       sourceId: row.source_id ? String(row.source_id) : null,
       createdAt: String(row.created_at),

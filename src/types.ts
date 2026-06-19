@@ -9,6 +9,9 @@ export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 export const QuadrantSchema = z.enum(["urgent-important", "urgent-not-important", "not-urgent-important", "not-urgent-not-important"]);
 export type Quadrant = z.infer<typeof QuadrantSchema>;
 
+export const DeadlineTypeSchema = z.enum(["none", "soft", "hard"]);
+export type DeadlineType = z.infer<typeof DeadlineTypeSchema>;
+
 export const IntentSchema = z.enum(["add", "modify", "complete", "cancel", "query_today", "query_week", "replan", "unknown"]);
 export type Intent = z.infer<typeof IntentSchema>;
 
@@ -20,6 +23,11 @@ export const ParsedTaskSchema = z.object({
   priority: z.number().int().min(1).max(5).optional(),
   energy: EnergySchema.optional(),
   context: z.string().optional(),
+  valueScore: z.number().int().min(1).max(5).optional(),
+  deadlineType: DeadlineTypeSchema.optional(),
+  isProject: z.boolean().optional(),
+  projectId: z.number().int().positive().nullable().optional(),
+  progressNote: z.string().optional(),
   target: z.string().optional(),
   newRequirements: z.string().optional()
 });
@@ -47,11 +55,38 @@ export type Task = {
   scheduledStart: string | null;
   scheduledEnd: string | null;
   quadrant: Quadrant | null;
+  valueScore: number;
+  deadlineType: DeadlineType;
+  isProject: boolean;
+  projectId: number | null;
+  progressNote: string | null;
   source: string | null;
   sourceId: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+export const TaskTriageResultSchema = z.object({
+  valueScore: z.number().int().min(1).max(5),
+  deadlineType: DeadlineTypeSchema,
+  recommendedQuadrant: QuadrantSchema.nullable(),
+  isProject: z.boolean(),
+  estimatedMinutes: z.number().int().positive().optional(),
+  nextActionTitle: z.string().min(1).optional(),
+  clarificationQuestions: z.array(z.string().min(1)).default([]),
+  reason: z.string().min(1)
+});
+export type TaskTriageResult = z.infer<typeof TaskTriageResultSchema>;
+
+export const NextActionSuggestionSchema = z.object({
+  title: z.string().min(1),
+  durationMinutes: z.number().int().min(15).max(120).default(60),
+  deadline: z.string().datetime().nullable().optional(),
+  earliestStart: z.string().datetime().nullable().optional(),
+  reason: z.string().min(1),
+  clarificationQuestion: z.string().optional()
+});
+export type NextActionSuggestion = z.infer<typeof NextActionSuggestionSchema>;
 
 export const PriorityReviewSchema = z.object({
   taskId: z.number().int().positive(),
@@ -132,3 +167,14 @@ export const DEFAULT_REMINDER_POLICY: ReminderPolicy = ReminderPolicySchema.pars
 });
 
 export type ReminderStage = string;
+
+export const WorkSettingsSchema = z.object({
+  dailyWorkCapacityHours: z.number().min(0.5).max(12).default(3),
+  secretaryMvpMode: z.boolean().default(true)
+});
+export type WorkSettings = z.infer<typeof WorkSettingsSchema>;
+
+export const DEFAULT_WORK_SETTINGS: WorkSettings = WorkSettingsSchema.parse({
+  dailyWorkCapacityHours: 3,
+  secretaryMvpMode: true
+});

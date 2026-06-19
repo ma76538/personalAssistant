@@ -11,7 +11,7 @@ const config = loadConfig();
 const repo = new AssistantRepository(config.databasePath);
 const minimax = new MiniMaxClient(config);
 const bot = createAssistantBot({ config, repo, minimax });
-const dashboard = startDashboardServer(repo, config.dashboardPort);
+const dashboard = startDashboardServer(repo, config.dashboardPort, minimax);
 const runAppleReminderAutoSync = createAppleReminderAutoSync(repo, {
   enabled: config.appleReminderSyncEnabled,
   intervalMinutes: config.appleReminderSyncIntervalMinutes,

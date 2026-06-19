@@ -1,4 +1,4 @@
-const state = { tasks: [], summary: null, reminderPolicy: null, calendarSettings: null, search: "" };
+const state = { tasks: [], summary: null, reminderPolicy: null, calendarSettings: null, workSettings: null, search: "" };
 const $ = (id) => document.getElementById(id);
 
 const matrixEl = $("matrix");
@@ -20,6 +20,8 @@ const drawerTitleEl = $("drawer-title");
 const reminderSettingsFormEl = $("reminder-settings-form");
 const reminderSettingsStatusEl = $("reminder-settings-status");
 const calendarSettingsStatusEl = $("calendar-settings-status");
+const workCapacityStatusEl = $("work-capacity-status");
+const pendingReviewStatusEl = $("pending-review-status");
 
 let draggedTaskId = null;
 let pointerDrag = null;
@@ -35,6 +37,8 @@ $("cancel-edit").addEventListener("click", closeEditor);
 drawerBackdropEl.addEventListener("click", closeEditor);
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
+$("save-work-capacity").addEventListener("click", saveWorkCapacity);
+$("run-pending-review").addEventListener("click", runPendingReview);
 reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
 reminderSettingsFormEl.addEventListener("change", scheduleReminderSettingsSave);
 $("reset-reminder-settings").addEventListener("click", resetReminderSettings);
@@ -136,6 +140,8 @@ async function handleTaskButtonClick(event) {
   if (button.dataset.action === "pending-bucket") await moveTaskToPendingBucket(task);
   if (button.dataset.action === "quadrant") await updateTaskQuadrant(id, button.dataset.quadrant);
   if (button.dataset.action === "status") await updateTaskStatus(id, button.dataset.status);
+  if (button.dataset.action === "check-in") await checkInTask(id, button.dataset.outcome || "defer");
+  if (button.dataset.action === "next-action") await previewNextAction(id);
   await loadDashboard();
 }
 
@@ -247,16 +253,18 @@ async function handlePointerDragEnd(event) {
 }
 
 async function loadDashboard() {
-  const [summaryResponse, tasksResponse, reminderResponse, calendarSettingsResponse] = await Promise.all([
+  const [summaryResponse, tasksResponse, reminderResponse, calendarSettingsResponse, workSettingsResponse] = await Promise.all([
     fetch("/api/summary"),
     fetch("/api/tasks"),
     fetch("/api/reminder-settings"),
-    fetch("/api/calendar-settings")
+    fetch("/api/calendar-settings"),
+    fetch("/api/work-capacity")
   ]);
   state.summary = await summaryResponse.json();
   state.tasks = (await tasksResponse.json()).tasks;
   state.reminderPolicy = (await reminderResponse.json()).policy;
   state.calendarSettings = await calendarSettingsResponse.json();
+  state.workSettings = await workSettingsResponse.json();
   render();
 }
 
@@ -271,6 +279,7 @@ function render() {
   renderFocusList();
   renderReminderSettings();
   renderCalendarSettings();
+  renderWorkSettings();
   lastUpdatedEl.textContent = `更新於 ${new Intl.DateTimeFormat("zh-Hant", {
     hour: "2-digit",
     minute: "2-digit",
@@ -294,13 +303,14 @@ function pendingTask(task) {
       <strong>${esc(task.title)}</strong>
       <small>${task.deadline ? `Due ${shortMonthDay(task.deadline)}` : "未決定時間，不進排程"}</small>
     </div>
+    ${taskMeta(task)}
     <div class="pending-actions">
       <button data-action="quadrant" data-quadrant="urgent-important" data-id="${task.id}" type="button">緊急重要</button>
       <button data-action="quadrant" data-quadrant="urgent-not-important" data-id="${task.id}" type="button">緊急不重要</button>
       <button data-action="quadrant" data-quadrant="not-urgent-important" data-id="${task.id}" type="button">不緊急重要</button>
       <button data-action="quadrant" data-quadrant="not-urgent-not-important" data-id="${task.id}" type="button">不緊急不重要</button>
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
-      <button data-action="status" data-status="done" data-id="${task.id}" type="button">完成</button>
+      <button data-action="check-in" data-outcome="complete" data-id="${task.id}" type="button">完成</button>
     </div>
   </article>`;
 }
@@ -400,6 +410,7 @@ function taskRow(task, rank) {
     <span class="task-rank">${rank}</span>
     <div class="task-main">
       <strong>${esc(task.title)}</strong>
+      ${taskMeta(task)}
       ${startMarkup ? `<div class="task-dates">${startMarkup}</div>` : ""}
       ${needsDue ? `<p class="due-warning">每個任務都必須加 Due day，未補前不會自動排程。</p>` : ""}
     </div>
@@ -407,7 +418,10 @@ function taskRow(task, rank) {
       ${dueChip(task, needsDue)}
       <button class="${status === "pending" ? "active" : ""}" data-action="status" data-status="pending" data-id="${task.id}" type="button">待定</button>
       <button class="${status === "in_progress" ? "active" : ""}" data-action="status" data-status="in_progress" data-id="${task.id}" type="button">進行中</button>
-      <button data-action="status" data-status="done" data-id="${task.id}" type="button">完成</button>
+      <button data-action="check-in" data-outcome="complete" data-id="${task.id}" type="button">完成</button>
+      <button data-action="check-in" data-outcome="stuck" data-id="${task.id}" type="button">卡住</button>
+      <button data-action="check-in" data-outcome="defer" data-id="${task.id}" type="button">延後</button>
+      ${task.isProject ? `<button data-action="next-action" data-id="${task.id}" type="button">下一步</button>` : ""}
       <button data-action="pending-bucket" data-id="${task.id}" type="button">放待定</button>
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
     </div>
@@ -461,6 +475,16 @@ function dueChip(task, needsDue = false) {
     return `<button class="due-chip missing" data-action="edit" data-id="${task.id}" type="button" title="補回 Due day">加 Due</button>`;
   }
   return "";
+}
+
+function taskMeta(task) {
+  const chips = [
+    `<span>價值 ${task.valueScore ?? 3}</span>`,
+    `<span>${deadlineTypeLabel(task.deadlineType)}</span>`,
+    task.isProject ? "<span>項目</span>" : "",
+    task.projectId ? `<span>屬於 #${task.projectId}</span>` : ""
+  ].filter(Boolean);
+  return `<div class="task-tags meta-tags">${chips.join("")}</div>`;
 }
 
 function renderCompletedBin() {
@@ -517,6 +541,67 @@ function renderCalendarSettings() {
   if (note) note.textContent = settings.note || "日曆設定已載入。";
 }
 
+function renderWorkSettings() {
+  const settings = state.workSettings || state.summary?.workSettings;
+  if (!settings) return;
+  setValue("work-capacity-hours", settings.dailyWorkCapacityHours);
+  setChecked("secretary-mvp-mode", settings.secretaryMvpMode);
+  workCapacityStatusEl.textContent = `每日容量 ${settings.dailyWorkCapacityHours} 小時｜${settings.secretaryMvpMode ? "電子秘書 MVP 最高價值" : "一般排序"}`;
+}
+
+async function saveWorkCapacity() {
+  try {
+    const response = await requestJson("/api/work-capacity", {
+      method: "PUT",
+      body: JSON.stringify({
+        dailyWorkCapacityHours: Number($("work-capacity-hours").value),
+        secretaryMvpMode: $("secretary-mvp-mode").checked
+      })
+    });
+    state.workSettings = response;
+    state.tasks = response.tasks || state.tasks;
+    await loadDashboard();
+    workCapacityStatusEl.textContent = "每日容量已儲存，未開始任務已重排。";
+  } catch (error) {
+    workCapacityStatusEl.textContent = error instanceof Error ? `儲存失敗：${error.message}` : "儲存失敗";
+  }
+}
+
+async function runPendingReview() {
+  try {
+    const response = await requestJson("/api/pending-review", {
+      method: "POST",
+      body: JSON.stringify({ limit: 8 })
+    });
+    const items = response.items || [];
+    pendingReviewStatusEl.innerHTML = items.length
+      ? `<strong>待定整理建議</strong>${items.map((item) => `<p>#${item.task.id} ${esc(item.task.title)} → ${quadrantLabel(item.suggestion.recommendedQuadrant)}｜價值 ${item.suggestion.valueScore}｜${esc(item.suggestion.reason)}</p>`).join("")}`
+      : "<p>目前沒有待定任務需要整理。</p>";
+  } catch (error) {
+    pendingReviewStatusEl.textContent = error instanceof Error ? `整理失敗：${error.message}` : "整理失敗";
+  }
+}
+
+async function checkInTask(id, outcome) {
+  const note = window.prompt(outcome === "stuck" ? "卡在哪？" : "延後原因或新線索？") || "";
+  const response = await requestJson(`/api/tasks/${id}/check-in`, {
+    method: "POST",
+    body: JSON.stringify({ outcome, note })
+  });
+  if (response.nextActionPreview) {
+    pendingReviewStatusEl.innerHTML = `<strong>下一步建議</strong><p>${esc(response.nextActionPreview.title)}｜${response.nextActionPreview.durationMinutes} 分鐘</p><p>${esc(response.nextActionPreview.reason)}</p>`;
+  }
+}
+
+async function previewNextAction(id) {
+  const note = window.prompt("補充目前進度或卡點（可留空）") || "";
+  const response = await requestJson(`/api/projects/${id}/next-action-preview`, {
+    method: "POST",
+    body: JSON.stringify({ progressNote: note })
+  });
+  pendingReviewStatusEl.innerHTML = `<strong>下一步建議</strong><p>${esc(response.action.title)}｜${response.action.durationMinutes} 分鐘</p><p>${esc(response.action.reason)}</p>`;
+}
+
 async function saveCalendarSettings() {
   try {
     const response = await requestJson("/api/calendar-settings", {
@@ -548,6 +633,11 @@ function openEditor(task = null) {
   $("quick-win-toggle").checked = Boolean(task && task.durationMinutes <= 2);
   $("earliestStart").value = toLocalInputValue(task?.earliestStart);
   $("deadline").value = toLocalInputValue(task?.deadline);
+  $("value-score").value = task?.valueScore ?? 3;
+  $("deadline-type").value = task?.deadlineType ?? "none";
+  $("is-project").checked = Boolean(task?.isProject);
+  $("project-id").value = task?.projectId ?? "";
+  $("progress-note").value = task?.progressNote ?? "";
   drawerBackdropEl.hidden = false;
   drawerEl.setAttribute("aria-hidden", "false");
   document.body.classList.add("drawer-open");
@@ -566,7 +656,12 @@ function formPayload() {
     title: $("title").value.trim(),
     quadrant: $("task-quadrant").value === "pending-bucket" ? null : $("task-quadrant").value,
     earliestStart: fromLocalInputValue($("earliestStart").value),
-    deadline: fromLocalInputValue($("deadline").value)
+    deadline: fromLocalInputValue($("deadline").value),
+    valueScore: Number($("value-score").value),
+    deadlineType: $("deadline-type").value,
+    isProject: $("is-project").checked,
+    projectId: $("project-id").value ? Number($("project-id").value) : null,
+    progressNote: $("progress-note").value.trim() || null
   };
   if ($("quick-win-toggle").checked) {
     payload.durationMinutes = 2;
@@ -672,6 +767,21 @@ function isUrgentTask(task) {
 
 function isUrgentQuadrant(quadrant) {
   return quadrant === "urgent-important" || quadrant === "urgent-not-important";
+}
+
+function deadlineTypeLabel(type) {
+  return { hard: "Hard deadline", soft: "Soft deadline", none: "未定 deadline" }[type || "none"] || "未定 deadline";
+}
+
+function quadrantLabel(quadrant) {
+  return (
+    {
+      "urgent-important": "緊急重要",
+      "urgent-not-important": "緊急不重要",
+      "not-urgent-important": "不緊急重要",
+      "not-urgent-not-important": "不緊急不重要"
+    }[quadrant] || "待定"
+  );
 }
 
 function timeRange(start, end) {

@@ -30,16 +30,19 @@ const WINDOWS: WorkWindow[] = [
 ];
 
 const BUFFER_MINUTES = 10;
-const MAX_SEGMENT_MINUTES = 120;
+const MAX_SEGMENT_MINUTES = 90;
 const MIN_SEGMENT_MINUTES = 25;
+const DEFAULT_DAILY_CAPACITY_HOURS = 3;
 
-export function buildSchedule(tasks: Task[], now = new Date(), busyBlocks: BusyBlock[] = []): ScheduleItem[] {
+export function buildSchedule(tasks: Task[], now = new Date(), busyBlocks: BusyBlock[] = [], options: { dailyCapacityHours?: number } = {}): ScheduleItem[] {
+  const dailyCapacityMinutes = Math.max(30, Math.round((options.dailyCapacityHours ?? DEFAULT_DAILY_CAPACITY_HOURS) * 60));
   const movable = tasks
     .filter((task) => (task.status === "pending" || task.status === "scheduled") && Boolean(task.deadline) && Boolean(task.quadrant))
     .sort(compareTasks);
 
   const plan: ScheduleItem[] = [];
   const cursorByWindow = new Map<string, Date>();
+  const usedMinutesByDay = new Map<string, number>();
   let day = startOfLocalDay(now);
 
   for (const task of movable) {
@@ -47,7 +50,7 @@ export function buildSchedule(tasks: Task[], now = new Date(), busyBlocks: BusyB
     const taskPlan: ScheduleItem[] = [];
 
     for (let index = 0; index < segments.length; index += 1) {
-      const placement = findPlacement(task, segments[index], cursorByWindow, day, now, busyBlocks);
+      const placement = findPlacement(task, segments[index], cursorByWindow, usedMinutesByDay, dailyCapacityMinutes, day, now, busyBlocks);
       if (!placement) {
         break;
       }
@@ -68,9 +71,22 @@ export function buildSchedule(tasks: Task[], now = new Date(), busyBlocks: BusyB
   return plan;
 }
 
-function findPlacement(task: Task, durationMinutes: number, cursorByWindow: Map<string, Date>, startDay: Date, now: Date, busyBlocks: BusyBlock[]): Omit<ScheduleItem, "segmentIndex" | "segmentCount"> | null {
+function findPlacement(
+  task: Task,
+  durationMinutes: number,
+  cursorByWindow: Map<string, Date>,
+  usedMinutesByDay: Map<string, number>,
+  dailyCapacityMinutes: number,
+  startDay: Date,
+  now: Date,
+  busyBlocks: BusyBlock[]
+): Omit<ScheduleItem, "segmentIndex" | "segmentCount"> | null {
   for (let offset = 0; offset < 21; offset += 1) {
     const day = new Date(startDay.getTime() + offset * 24 * 60 * 60 * 1000);
+    const dayKey = day.toDateString();
+    if ((usedMinutesByDay.get(dayKey) ?? 0) + durationMinutes > dailyCapacityMinutes) {
+      continue;
+    }
     const preferred = [
       ...WINDOWS.filter((window) => window.energies.includes(task.energy)),
       ...WINDOWS.filter((window) => !window.energies.includes(task.energy))
@@ -102,6 +118,7 @@ function findPlacement(task: Task, durationMinutes: number, cursorByWindow: Map<
       }
 
       cursorByWindow.set(key, bufferedEnd);
+      usedMinutesByDay.set(dayKey, (usedMinutesByDay.get(dayKey) ?? 0) + durationMinutes);
       return { taskId: task.id, scheduledStart: start.toISOString(), scheduledEnd: end.toISOString() };
     }
   }
@@ -139,6 +156,14 @@ function firstConflict(start: Date, end: Date, busyBlocks: BusyBlock[]): BusyBlo
 }
 
 function compareTasks(a: Task, b: Task): number {
+  const aHard = a.deadlineType === "hard";
+  const bHard = b.deadlineType === "hard";
+  if (aHard !== bHard) {
+    return aHard ? -1 : 1;
+  }
+  if (a.valueScore !== b.valueScore) {
+    return b.valueScore - a.valueScore;
+  }
   if (a.deadline && b.deadline && a.deadline !== b.deadline) {
     return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
   }

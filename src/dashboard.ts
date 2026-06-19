@@ -10,13 +10,15 @@ import { AppleCalendarEvent, listAppleCalendarEvents } from "./appleCalendar.js"
 import { buildSchedule, BusyBlock } from "./scheduler.js";
 import { prioritizeTasks } from "./prioritizer.js";
 import { endOfLocalDay, startOfLocalDay, startOfNextWeek } from "./time.js";
-import { EnergySchema, QuadrantSchema, ReminderPolicySchema, TaskStatusSchema } from "./types.js";
+import { DeadlineTypeSchema, EnergySchema, NextActionSuggestion, QuadrantSchema, ReminderPolicySchema, Task, TaskStatusSchema, WorkSettingsSchema } from "./types.js";
+import { buildTriageSuggestion, fallbackNextAction } from "./triage.js";
+import { MiniMaxClient } from "./minimax.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "../public");
 const DEFAULT_CALENDAR_ACCOUNT_EMAIL = process.env.CALENDAR_ACCOUNT_EMAIL || "kevin@region.mo";
 
-export function startDashboardServer(repo: AssistantRepository, port: number): http.Server {
+export function startDashboardServer(repo: AssistantRepository, port: number, minimax?: MiniMaxClient): http.Server {
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
 
@@ -35,6 +37,83 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
         }
         reschedule(repo);
         sendJson(response, { task: repo.getTask(task.id) }, 201);
+        return;
+      }
+
+      if (url.pathname === "/api/work-capacity" && request.method === "GET") {
+        sendJson(response, repo.getWorkSettings());
+        return;
+      }
+
+      if (url.pathname === "/api/work-capacity" && request.method === "PUT") {
+        const settings = WorkSettingsSchema.parse(await readJson(request));
+        const saved = repo.saveWorkSettings(settings);
+        reschedule(repo);
+        sendJson(response, { ...saved, tasks: repo.listAllTasks() });
+        return;
+      }
+
+      if (url.pathname === "/api/pending-review" && request.method === "POST") {
+        const input = PendingReviewSchema.parse(await readJson(request));
+        const settings = repo.getWorkSettings();
+        const pending = repo
+          .listAllTasks()
+          .filter((task) => !["done", "cancelled"].includes(task.status) && !task.quadrant)
+          .slice(0, input.limit);
+        sendJson(response, {
+          items: pending.map((task) => ({
+            task,
+            suggestion: buildTriageSuggestion(task, {
+              now: new Date(),
+              dailyWorkCapacityHours: settings.dailyWorkCapacityHours,
+              secretaryMvpMode: settings.secretaryMvpMode
+            })
+          }))
+        });
+        return;
+      }
+
+      const checkInMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/check-in$/);
+      if (checkInMatch && request.method === "POST") {
+        const taskId = Number(checkInMatch[1]);
+        const current = repo.getTask(taskId);
+        if (!current) {
+          sendJson(response, { error: "Task not found" }, 404);
+          return;
+        }
+        const input = CheckInSchema.parse(await readJson(request));
+        const updated = applyCheckIn(repo, current, input);
+        writeTaskToAppleReminder(updated);
+        reschedule(repo);
+        const project = updated.isProject ? updated : updated.projectId ? repo.getTask(updated.projectId) : null;
+        const preview = project && input.outcome === "complete" ? await nextActionPreview(project, input.note, minimax) : null;
+        sendJson(response, { task: repo.getTask(updated.id), nextActionPreview: preview });
+        return;
+      }
+
+      const triageMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/triage-preview$/);
+      if (triageMatch && request.method === "POST") {
+        const taskId = Number(triageMatch[1]);
+        const task = repo.getTask(taskId);
+        if (!task) {
+          sendJson(response, { error: "Task not found" }, 404);
+          return;
+        }
+        const settings = repo.getWorkSettings();
+        sendJson(response, { task, suggestion: await triagePreview(task, settings, minimax) });
+        return;
+      }
+
+      const nextActionMatch = url.pathname.match(/^\/api\/projects\/(\d+)\/next-action-preview$/);
+      if (nextActionMatch && request.method === "POST") {
+        const projectId = Number(nextActionMatch[1]);
+        const project = repo.getTask(projectId);
+        if (!project) {
+          sendJson(response, { error: "Project not found" }, 404);
+          return;
+        }
+        const input = NextActionPreviewSchema.parse(await readJson(request));
+        sendJson(response, { project, action: await nextActionPreview(project, input.progressNote, minimax) });
         return;
       }
 
@@ -162,7 +241,8 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
       const completed = tasks.filter((task) => task.status === "done").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       const calendar = listAppleCalendarEvents(getCalendarAccountEmail(repo), monthStart, monthEnd);
       const busyBlocks = calendarEventsToBusyBlocks(calendar.events);
-      const scheduleSegments = buildSchedule(tasks, now, busyBlocks);
+      const workSettings = repo.getWorkSettings();
+      const scheduleSegments = buildSchedule(tasks, now, busyBlocks, { dailyCapacityHours: workSettings.dailyWorkCapacityHours });
       sendJson(response, {
         total: tasks.length,
         active: tasks.filter((task) => !["done", "cancelled"].includes(task.status)).length,
@@ -177,6 +257,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number): h
           .filter((task) => task.deadline && task.deadline >= monthStart && task.deadline < monthEnd && !["done", "cancelled"].includes(task.status))
           .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()),
         calendar,
+        workSettings,
         completed,
         topPriorities: actionablePriorities.slice(0, 5),
         quadrants: groupQuadrants(actionablePriorities),
@@ -210,7 +291,12 @@ const TaskInputSchema = z.object({
   priority: z.number().int().min(1).max(5).default(3),
   energy: EnergySchema.default("medium"),
   quadrant: QuadrantSchema.nullable().optional(),
-  context: z.string().trim().nullable().optional()
+  context: z.string().trim().nullable().optional(),
+  valueScore: z.number().int().min(1).max(5).default(3),
+  deadlineType: DeadlineTypeSchema.default("none"),
+  isProject: z.boolean().default(false),
+  projectId: z.number().int().positive().nullable().optional(),
+  progressNote: z.string().trim().nullable().optional()
 });
 
 const TaskPatchSchema = z.object({
@@ -222,7 +308,12 @@ const TaskPatchSchema = z.object({
   energy: EnergySchema.optional(),
   quadrant: QuadrantSchema.nullable().optional(),
   context: z.string().trim().nullable().optional(),
-  status: TaskStatusSchema.optional()
+  status: TaskStatusSchema.optional(),
+  valueScore: z.number().int().min(1).max(5).optional(),
+  deadlineType: DeadlineTypeSchema.optional(),
+  isProject: z.boolean().optional(),
+  projectId: z.number().int().positive().nullable().optional(),
+  progressNote: z.string().trim().nullable().optional()
 });
 
 const SyncInputSchema = z.object({
@@ -231,6 +322,19 @@ const SyncInputSchema = z.object({
 
 const CalendarSettingsSchema = z.object({
   accountEmail: z.string().trim().email()
+});
+
+const PendingReviewSchema = z.object({
+  limit: z.number().int().min(1).max(20).default(8)
+});
+
+const CheckInSchema = z.object({
+  outcome: z.enum(["complete", "stuck", "defer"]),
+  note: z.string().trim().nullable().optional()
+});
+
+const NextActionPreviewSchema = z.object({
+  progressNote: z.string().trim().nullable().optional()
 });
 
 function sendJson(response: http.ServerResponse, payload: unknown, status = 200): void {
@@ -251,7 +355,59 @@ function reschedule(repo: AssistantRepository): void {
   const now = new Date();
   const calendarEnd = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
   const calendar = listAppleCalendarEvents(getCalendarAccountEmail(repo), now.toISOString(), calendarEnd.toISOString());
-  repo.applySchedule(buildSchedule(repo.listActiveTasks(), now, calendarEventsToBusyBlocks(calendar.events)));
+  repo.applySchedule(buildSchedule(repo.listActiveTasks(), now, calendarEventsToBusyBlocks(calendar.events), { dailyCapacityHours: repo.getWorkSettings().dailyWorkCapacityHours }));
+}
+
+function applyCheckIn(repo: AssistantRepository, task: Task, input: z.infer<typeof CheckInSchema>): Task {
+  const note = input.note || task.progressNote;
+  if (input.outcome === "complete") {
+    return repo.updateTask(task.id, { status: "done", scheduledStart: null, scheduledEnd: null, progressNote: note ?? task.progressNote });
+  }
+  if (input.outcome === "stuck") {
+    return repo.updateTask(task.id, {
+      status: "in_progress",
+      scheduledStart: null,
+      scheduledEnd: null,
+      progressNote: note ? `卡住：${note}` : "卡住，需要拆更小下一步。"
+    });
+  }
+  return repo.updateTask(task.id, {
+    status: "pending",
+    scheduledStart: null,
+    scheduledEnd: null,
+    progressNote: note ? `延後：${note}` : "延後，等待重新安排。"
+  });
+}
+
+async function nextActionPreview(project: Task, progressNote: string | null | undefined, minimax?: MiniMaxClient): Promise<NextActionSuggestion> {
+  if (minimax) {
+    try {
+      return await minimax.suggestNextAction({ project, progressNote, now: new Date() });
+    } catch (error) {
+      console.warn("MiniMax next action preview failed, using fallback", error);
+    }
+  }
+  return fallbackNextAction(project, progressNote);
+}
+
+async function triagePreview(task: Task, settings: z.infer<typeof WorkSettingsSchema>, minimax?: MiniMaxClient) {
+  if (minimax) {
+    try {
+      return await minimax.triageTask({
+        task,
+        now: new Date(),
+        dailyWorkCapacityHours: settings.dailyWorkCapacityHours,
+        secretaryMvpMode: settings.secretaryMvpMode
+      });
+    } catch (error) {
+      console.warn("MiniMax triage preview failed, using fallback", error);
+    }
+  }
+  return buildTriageSuggestion(task, {
+    now: new Date(),
+    dailyWorkCapacityHours: settings.dailyWorkCapacityHours,
+    secretaryMvpMode: settings.secretaryMvpMode
+  });
 }
 
 function getCalendarAccountEmail(repo: AssistantRepository): string {

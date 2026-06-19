@@ -45,7 +45,7 @@ export function createPendingAction(repo: AssistantRepository, parsed: ParsedAct
     }
     case "replan": {
       const tasks = repo.listActiveTasks();
-      const plan = buildSchedule(tasks, now, calendarBusyBlocks(now));
+      const plan = buildSchedule(tasks, now, calendarBusyBlocks(now), { dailyCapacityHours: repo.getWorkSettings().dailyWorkCapacityHours });
       return {
         type: "replan",
         parsedAction: parsed,
@@ -75,14 +75,19 @@ export function applyPendingAction(repo: AssistantRepository, pending: PendingAc
           earliestStart: task.earliestStart,
           priority: task.priority,
           energy: task.energy,
-          context: task.context
+          context: task.context,
+          valueScore: task.valueScore,
+          deadlineType: task.deadlineType,
+          isProject: task.isProject,
+          projectId: task.projectId,
+          progressNote: task.progressNote
         })
       );
       for (const task of created) {
         syncTaskToAppleReminders(repo, task);
       }
       const tasks = repo.listActiveTasks();
-      repo.applySchedule(buildSchedule(tasks, new Date(), calendarBusyBlocks()));
+      repo.applySchedule(buildSchedule(tasks, new Date(), calendarBusyBlocks(), { dailyCapacityHours: repo.getWorkSettings().dailyWorkCapacityHours }));
       const refreshed = created.map((task) => repo.getTask(task.id)!).map(formatTask).join("\n\n");
       return `已新增 ${created.length} 個任務並更新排程：\n${refreshed}。`;
     }
@@ -97,30 +102,35 @@ export function applyPendingAction(repo: AssistantRepository, pending: PendingAc
         priority: patch.priority ?? task.priority,
         energy: patch.energy ?? task.energy,
         context: patch.context ?? task.context,
+        valueScore: patch.valueScore ?? task.valueScore,
+        deadlineType: patch.deadlineType ?? task.deadlineType,
+        isProject: patch.isProject ?? task.isProject,
+        projectId: patch.projectId === undefined ? task.projectId : patch.projectId,
+        progressNote: patch.progressNote ?? task.progressNote,
         scheduledStart: null,
         scheduledEnd: null,
         status: "pending"
       });
       syncTaskToAppleReminders(repo, updated);
-      repo.applySchedule(buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks()));
+      repo.applySchedule(buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks(), { dailyCapacityHours: repo.getWorkSettings().dailyWorkCapacityHours }));
       return `已修改並更新排程：\n${formatTask(repo.getTask(task.id)!)}。`;
     }
     case "complete": {
       const task = requireTarget(repo, parsed.task?.target);
       const updated = repo.updateTask(task.id, { status: "done", scheduledStart: null, scheduledEnd: null });
       syncTaskToAppleReminders(repo, updated);
-      repo.applySchedule(buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks()));
+      repo.applySchedule(buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks(), { dailyCapacityHours: repo.getWorkSettings().dailyWorkCapacityHours }));
       return `已完成：#${task.id} ${task.title}。`;
     }
     case "cancel": {
       const task = requireTarget(repo, parsed.task?.target);
       const updated = repo.updateTask(task.id, { status: "cancelled", scheduledStart: null, scheduledEnd: null });
       syncTaskToAppleReminders(repo, updated);
-      repo.applySchedule(buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks()));
+      repo.applySchedule(buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks(), { dailyCapacityHours: repo.getWorkSettings().dailyWorkCapacityHours }));
       return `已取消：#${task.id} ${task.title}。`;
     }
     case "replan":
-      repo.applySchedule(pending.schedulePlan || buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks()));
+      repo.applySchedule(pending.schedulePlan || buildSchedule(repo.listActiveTasks(), new Date(), calendarBusyBlocks(), { dailyCapacityHours: repo.getWorkSettings().dailyWorkCapacityHours }));
       return "已套用新的未開始任務排程。";
   }
 }
@@ -160,6 +170,11 @@ function fakeTask(task: ParsedTask, id: number, now: Date): Task {
     scheduledStart: null,
     scheduledEnd: null,
     quadrant: null,
+    valueScore: task.valueScore ?? 3,
+    deadlineType: task.deadlineType ?? "none",
+    isProject: task.isProject ?? false,
+    projectId: task.projectId ?? null,
+    progressNote: task.progressNote ?? null,
     source: null,
     sourceId: null,
     createdAt: now.toISOString(),
