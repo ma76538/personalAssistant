@@ -448,7 +448,7 @@ function renderGantt() {
   if (ganttCountEl) ganttCountEl.textContent = String(items.length);
 
   ganttBoardEl.innerHTML = items.length
-    ? items
+    ? `${ganttAxis()}${items
         .map((item) => {
           const start = new Date(item.scheduledStart);
           const end = new Date(item.scheduledEnd);
@@ -474,13 +474,23 @@ function renderGantt() {
             <div class="gantt-track"><span style="left:${left}%;width:${width}%"></span></div>
           </article>`;
         })
-        .join("")
-    : `<div class="drop-empty">暫時沒有可排程的工作段。四象限任務需要 Due Date，並且不是已完成/取消，才會進甘特圖。</div>`;
+        .join("")}`
+    : `<div class="drop-empty">暫時沒有可排程的工作段。只有緊急重要、緊急不重要、不緊急重要，且不是 2 分鐘完成的任務，才會進甘特圖。</div>`;
 }
 
 function ganttLeft(date) {
   const hour = date.getHours() + date.getMinutes() / 60;
   return Math.max(0, Math.min(94, ((hour - 8) / 12) * 100));
+}
+
+function ganttAxis() {
+  const ticks = ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00"];
+  return `<div class="gantt-axis"><div></div><div class="gantt-axis-track">${ticks.map((tick) => `<span style="left:${ganttTickLeft(tick)}%">${tick}</span>`).join("")}</div></div>`;
+}
+
+function ganttTickLeft(value) {
+  const [hour, minute] = value.split(":").map(Number);
+  return Math.max(0, Math.min(100, (((hour + minute / 60) - 8) / 12) * 100));
 }
 
 function dueChip(task, needsDue = false) {

@@ -65,6 +65,22 @@ describe("buildSchedule", () => {
     expect(plan).toHaveLength(0);
   });
 
+  it("does not schedule two-minute quick wins", () => {
+    const plan = buildSchedule(
+      [task({ id: 1, durationMinutes: 2, deadline: "2026-05-24T10:00:00.000Z" })],
+      new Date("2026-05-23T01:00:00.000Z")
+    );
+    expect(plan).toHaveLength(0);
+  });
+
+  it("does not schedule not urgent and not important tasks", () => {
+    const plan = buildSchedule(
+      [task({ id: 1, quadrant: "not-urgent-not-important", deadline: "2026-05-24T10:00:00.000Z" })],
+      new Date("2026-05-23T01:00:00.000Z")
+    );
+    expect(plan).toHaveLength(0);
+  });
+
   it("splits long tasks into multiple schedule segments", () => {
     const plan = buildSchedule(
       [task({ id: 1, durationMinutes: 300, deadline: "2026-05-27T10:00:00.000Z" })],

@@ -46,3 +46,8 @@
 .matrix-status-actions button{height:27px;padding:0 7px}
 .calendar-settings-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .calendar-settings-actions button{height:34px;padding:0 12px;border-color:rgba(77,167,170,.36);background:rgba(77,167,170,.12);color:#287174;font-weight:800}
+.gantt-axis{display:grid;grid-template-columns:minmax(180px,280px) minmax(0,1fr);gap:12px;align-items:end;padding:0 10px 2px}
+.gantt-axis-track{position:relative;height:24px;border-bottom:1px solid rgba(125,145,174,.26)}
+.gantt-axis-track span{position:absolute;bottom:5px;transform:translateX(-50%);color:#6d7b91;font-size:11px;font-weight:800;white-space:nowrap}
+.gantt-track::before,.gantt-track::after{content:none!important}
+@media(max-width:900px){.gantt-axis{grid-template-columns:1fr;padding:0 0 2px}.gantt-axis>div:first-child{display:none}}

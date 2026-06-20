@@ -33,11 +33,12 @@ const BUFFER_MINUTES = 10;
 const MAX_SEGMENT_MINUTES = 90;
 const MIN_SEGMENT_MINUTES = 25;
 const DEFAULT_DAILY_CAPACITY_HOURS = 3;
+const SCHEDULABLE_QUADRANTS = new Set(["urgent-important", "urgent-not-important", "not-urgent-important"]);
 
 export function buildSchedule(tasks: Task[], now = new Date(), busyBlocks: BusyBlock[] = [], options: { dailyCapacityHours?: number } = {}): ScheduleItem[] {
   const dailyCapacityMinutes = Math.max(30, Math.round((options.dailyCapacityHours ?? DEFAULT_DAILY_CAPACITY_HOURS) * 60));
   const movable = tasks
-    .filter((task) => (task.status === "pending" || task.status === "scheduled") && Boolean(task.deadline) && Boolean(task.quadrant))
+    .filter((task) => (task.status === "pending" || task.status === "scheduled") && Boolean(task.deadline) && Boolean(task.quadrant) && task.durationMinutes > 2 && SCHEDULABLE_QUADRANTS.has(task.quadrant!))
     .sort(compareTasks);
 
   const plan: ScheduleItem[] = [];
