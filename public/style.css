@@ -51,3 +51,19 @@
 .gantt-axis-track span{position:absolute;bottom:5px;transform:translateX(-50%);color:#6d7b91;font-size:11px;font-weight:800;white-space:nowrap}
 .gantt-track::before,.gantt-track::after{content:none!important}
 @media(max-width:900px){.gantt-axis{grid-template-columns:1fr;padding:0 0 2px}.gantt-axis>div:first-child{display:none}}
+.compact-pending{padding:8px 10px}
+.compact-pending .panel-head{margin-bottom:6px}
+.compact-pending h2{font-size:16px}
+.compact-pending .muted{font-size:11px}
+.compact-pending .pending-list{grid-template-columns:repeat(4,minmax(160px,1fr));gap:5px}
+.compact-pending .pending-task{grid-template-columns:5px minmax(0,1fr) auto;align-items:center;padding:5px 7px 5px 0;gap:6px;min-height:34px;border-radius:6px;box-shadow:none}
+.compact-pending .priority-bar{width:4px;min-height:24px}
+.compact-pending .pending-task-content{gap:0}
+.compact-pending .pending-task-main{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+.compact-pending .pending-task-main strong{font-size:12px;line-height:1.2}
+.compact-pending .pending-task-main small{font-size:10px;line-height:1.2;color:#8a97aa}
+.compact-pending .pending-actions{grid-column:auto;justify-content:flex-end;gap:0}
+.compact-pending .pending-actions button{height:22px;padding:0 6px;font-size:10px;border-radius:6px}
+@media(max-width:1300px){.compact-pending .pending-list{grid-template-columns:repeat(3,minmax(150px,1fr))}}
+@media(max-width:900px){.compact-pending .pending-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.compact-pending .pending-list{grid-template-columns:1fr}}
