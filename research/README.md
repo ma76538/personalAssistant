@@ -5,6 +5,7 @@
 ## 文件索引
 
 - [系統總覽](./system-overview.md)
+- [對話壓縮版決策紀錄](./conversation-condensed-decisions.md)
 - [Apple Reminders 同步機制](./reminders-sync.md)
 - [Dashboard 與任務操作設計](./dashboard-design.md)
 - [Telegram 提醒與每日摘要](./telegram-reminders.md)
@@ -15,8 +16,8 @@
 ## 目前核心結論
 
 - Apple Reminders 是任務同步的 source of truth。
-- 同步範圍只應包含四個 Reminders 四象限列表，四象限外的 Reminder list 不應同步入系統。
-- Dashboard 的主要操作界面是四象限；2 分鐘任務獨立顯示，避免在四象限重複出現。
+- 同步範圍只應包含 `待定 + 四個 Reminders 四象限列表`，其他 Reminder list 不應同步入系統。
+- Dashboard 的主要操作界面是四象限；2 分鐘任務獨立顯示，待定任務壓縮在四象限下方。
 - Telegram 每日摘要和定時提醒只應提醒「緊急重要」事項，降低噪音。
 - 月曆視圖應結合本地已排程任務和 `kevin@region.mo` Apple Calendar events。
 - LLM 應負責理解、排序建議、追問和經驗沉澱；真正改任務或排程前仍要 preview / confirm。

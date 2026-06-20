@@ -6,7 +6,7 @@
 
 問題：過去 Reminders list 判斷太模糊，且指定 listName 時可能讀入四象限外的 list。
 
-修正方向：只用四象限白名單同步。四象限外 Reminder list 不進本地系統。
+修正方向：只用 `待定 + 四象限` 白名單同步。同步範圍外 Reminder list 不進本地系統。
 
 ### Dashboard 任務重複
 
@@ -36,10 +36,9 @@
 
 ## 建議驗收清單
 
-- Reminders 四個列表內容和 Dashboard 四象限完全一致。
-- 四象限外 Reminders list 不出現在 Dashboard。
+- Reminders `待定 + 四象限` 內容和 Dashboard 完全一致。
+- 同步範圍外 Reminders list 不出現在 Dashboard。
 - 2 分鐘任務只出現在「2 分鐘完成」區。
 - 完成 2 分鐘任務後，任務進入完成箱。
 - 月曆能顯示本地排程任務。
 - 授權 Calendar 後，月曆能顯示 `kevin@region.mo` 事件。
-
