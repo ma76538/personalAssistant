@@ -605,7 +605,10 @@ async function runPendingReview() {
 }
 
 async function checkInTask(id, outcome) {
-  const note = window.prompt(outcome === "stuck" ? "卡在哪？" : "延後原因或新線索？") || "";
+  const note =
+    outcome === "complete"
+      ? ""
+      : window.prompt(outcome === "stuck" ? "卡在哪？" : "延後原因或新線索？") || "";
   const response = await requestJson(`/api/tasks/${id}/check-in`, {
     method: "POST",
     body: JSON.stringify({ outcome, note })
