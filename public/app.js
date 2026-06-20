@@ -871,7 +871,7 @@ async function connectGoogleCalendar() {
 function renderFocusList() {
   const priorities = state.summary?.topPriorities || [];
   focusListEl.innerHTML = priorities.length
-    ? priorities.slice(0, 5).map((task, index) => `<article class="focus-item"><span>${index + 1}</span><strong>#${task.id} ${esc(task.title)}</strong><small>${esc(task.reason || "")}</small></article>`).join("")
+    ? priorities.slice(0, 5).map((task, index) => `<article class="focus-item"><span>${index + 1}</span><div class="focus-copy"><strong>#${task.id} ${esc(task.title)}</strong><small>${esc(task.reason || "今日優先處理")}</small></div></article>`).join("")
     : `<div class="empty">目前沒有未完成任務。</div>`;
 }
 
