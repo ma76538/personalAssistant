@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import { AppleCalendarEvent, listAppleCalendarEvents } from "./appleCalendar.js";
 import { AssistantRepository } from "./db.js";
 import {
   buildGoogleCalendarAuthUrl,
@@ -11,11 +10,19 @@ import {
   ensureGoogleAccessToken
 } from "./googleCalendar.js";
 
-export type CalendarEvent = AppleCalendarEvent;
+export type CalendarEvent = {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  calendarTitle: string;
+  sourceTitle: string;
+};
 
 export type CalendarResult = {
   accountEmail: string;
-  provider: "google-calendar" | "macos-calendar-bridge";
+  provider: "google-calendar";
   connected: boolean;
   events: CalendarEvent[];
   oauthStatus: string;
@@ -130,11 +137,13 @@ export async function listCalendarEvents(repo: AssistantRepository, startIso: st
     }
   }
 
-  const fallback = listAppleCalendarEvents(config.accountEmail, startIso, endIso);
   return {
-    ...fallback,
-    provider: "macos-calendar-bridge",
-    oauthStatus: googleOAuthStatus(config)
+    accountEmail: config.accountEmail,
+    provider: "google-calendar",
+    connected: false,
+    oauthStatus: googleOAuthStatus(config),
+    events: [],
+    error: googleOAuthStatus(config) === "google_credentials_missing" ? "請先設定 Google OAuth Client ID / Secret。" : "請先連接 Google Calendar。"
   };
 }
 
@@ -159,5 +168,5 @@ function calendarSettingsNote(config: GoogleCalendarConfig): string {
   if (!config.refreshToken) {
     return "OAuth credentials 已儲存。按「連接 Google Calendar」後，用 kevin@region.mo 授權 read-only Calendar。";
   }
-  return "Google Calendar 已授權。主頁月曆與甘特圖會優先使用 Google Calendar；macOS Calendar 只作 fallback。";
+  return "Google Calendar 已授權。主頁月曆與甘特圖會直接使用 Google Calendar，不會讀取 macOS Calendar。";
 }

@@ -97,7 +97,7 @@ describe("dashboard API", () => {
     expect(invalidResponse.status).toBe(400);
 
     const openPrivacyResponse = await fetch(`${baseUrl}/api/calendar-settings/open-privacy`, { method: "POST" });
-    expect(openPrivacyResponse.status).toBe(200);
+    expect(openPrivacyResponse.status).toBe(404);
   });
 
   it("serves work capacity settings and replans after updates", async () => {
@@ -269,7 +269,7 @@ describe("dashboard API", () => {
     const response = await fetch(`${baseUrl}/api/summary`);
     const payload = (await response.json()) as {
       month: Array<{ title: string; deadline: string | null; scheduledStart: string | null }>;
-      calendar: { accountEmail: string; connected: boolean; events: unknown[] };
+      calendar: { accountEmail: string; provider: string; connected: boolean; events: unknown[] };
       pendingBucket: Array<{ title: string }>;
       missingDeadlines: Array<{ title: string }>;
       scheduleSegments: Array<{ taskId: number }>;
@@ -280,6 +280,7 @@ describe("dashboard API", () => {
     expect(payload.month.map((task) => task.title)).toContain("按期限入月曆");
     expect(payload.month.find((task) => task.title === "按期限入月曆")?.deadline).toBe("2026-06-25T10:00:00.000Z");
     expect(payload.calendar.accountEmail).toBe("kevin@region.mo");
+    expect(payload.calendar.provider).toBe("google-calendar");
     expect(payload.calendar.connected).toBe(false);
     expect(payload.calendar.events).toEqual([]);
     expect(payload.pendingBucket.map((task) => task.title)).toContain("純待定任務");

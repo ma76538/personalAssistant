@@ -60,7 +60,6 @@ drawerBackdropEl.addEventListener("click", closeEditor);
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
 $("connect-google-calendar")?.addEventListener("click", connectGoogleCalendar);
-$("open-calendar-privacy")?.addEventListener("click", openCalendarPrivacy);
 $("save-work-capacity")?.addEventListener("click", saveWorkCapacity);
 $("run-pending-review")?.addEventListener("click", runPendingReview);
 reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
@@ -722,10 +721,10 @@ function renderCalendar() {
   const days = calendarMonthDays(new Date());
   const monthTasks = state.summary?.month || [];
   const calendar = state.summary?.calendar || { accountEmail: "kevin@region.mo", connected: false, events: [] };
-  const calendarMode = calendar.provider === "google-calendar" ? "｜Google Calendar" : calendar.matchMode === "google-source-fallback" ? "｜Google source fallback" : "｜macOS fallback";
+  const calendarMode = "｜Google Calendar";
   calendarStatusEl.textContent = calendar.connected
     ? `已連結 ${calendar.accountEmail}${calendarMode}｜${(calendar.events || []).length} 個日曆項目`
-    : `未同步 ${calendar.accountEmail}${calendar.error ? `：${calendar.error}` : "：需要授權 macOS Calendar"}`;
+    : `未同步 ${calendar.accountEmail}${calendar.error ? `：${calendar.error}` : "：請連接 Google Calendar"}`;
   calendarBoardEl.innerHTML = days
     .map((day) => {
       const tasks = monthTasks.filter((task) => sameLocalDay(task.deadline, day));
@@ -759,15 +758,6 @@ function renderCalendarSettings() {
     const token = settings.hasRefreshToken ? "Google refresh token 已儲存。" : "尚未完成 Google 授權。";
     const redirect = settings.redirectUri ? ` Redirect URI：${settings.redirectUri}` : "";
     note.textContent = `${settings.note || "日曆設定已載入。"} ${secret} ${token}${redirect}`;
-  }
-}
-
-async function openCalendarPrivacy() {
-  try {
-    await requestJson("/api/calendar-settings/open-privacy", { method: "POST" });
-    calendarSettingsStatusEl.textContent = "已開啟 macOS Calendar 授權設定；授權後回來按刷新。";
-  } catch (error) {
-    calendarSettingsStatusEl.textContent = error instanceof Error ? `無法開啟授權設定：${error.message}` : "無法開啟授權設定";
   }
 }
 

@@ -2,7 +2,6 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFile } from "node:child_process";
 import mime from "mime";
 import { z } from "zod";
 import { AssistantRepository } from "./db.js";
@@ -232,12 +231,6 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         return;
       }
 
-      if (url.pathname === "/api/calendar-settings/open-privacy" && request.method === "POST") {
-        openCalendarPrivacySettings();
-        sendJson(response, { ok: true });
-        return;
-      }
-
       if (url.pathname === "/oauth/google-calendar/callback" && request.method === "GET") {
         const code = url.searchParams.get("code");
         const state = url.searchParams.get("state");
@@ -451,11 +444,6 @@ async function triagePreview(task: Task, settings: z.infer<typeof WorkSettingsSc
     dailyWorkCapacityHours: settings.dailyWorkCapacityHours,
     secretaryMvpMode: settings.secretaryMvpMode
   });
-}
-
-function openCalendarPrivacySettings(): void {
-  if (process.env.NODE_ENV === "test" || process.env.VITEST) return;
-  execFile("open", ["x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"], () => undefined);
 }
 
 function calendarEventsToBusyBlocks(events: CalendarEvent[]): BusyBlock[] {
