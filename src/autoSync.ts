@@ -1,5 +1,5 @@
 import { syncAppleReminders } from "./appleReminders.js";
-import { listAppleCalendarEvents } from "./appleCalendar.js";
+import { listCalendarEvents } from "./calendarProvider.js";
 import { AssistantRepository } from "./db.js";
 import { buildSchedule } from "./scheduler.js";
 
@@ -37,7 +37,7 @@ export function createAppleReminderAutoSync(repo: AssistantRepository, options: 
     try {
       const startedAt = new Date();
       const result = sync(repo, options.listName);
-      repo.applySchedule(schedule(repo.listActiveTasks(), startedAt, calendarBusyBlocks(startedAt)));
+      repo.applySchedule(schedule(repo.listActiveTasks(), startedAt, await calendarBusyBlocks(repo, startedAt)));
       logger.log(
         `Apple Reminders auto-sync completed: imported ${result.imported}, completed ${result.completed}, deleted ${result.deleted}.`
       );
@@ -49,8 +49,8 @@ export function createAppleReminderAutoSync(repo: AssistantRepository, options: 
   };
 }
 
-function calendarBusyBlocks(now: Date): Array<{ start: string; end: string; title?: string }> {
+async function calendarBusyBlocks(repo: AssistantRepository, now: Date): Promise<Array<{ start: string; end: string; title?: string }>> {
   const end = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
-  const calendar = listAppleCalendarEvents(process.env.CALENDAR_ACCOUNT_EMAIL || "kevin@region.mo", now.toISOString(), end.toISOString());
+  const calendar = await listCalendarEvents(repo, now.toISOString(), end.toISOString());
   return calendar.events.map((event) => ({ start: event.start, end: event.end, title: event.title }));
 }

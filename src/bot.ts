@@ -53,7 +53,7 @@ export function createAssistantBot({ config, repo, minimax }: BotDeps): Telegraf
       await ctx.reply("目前沒有待確認的變更。");
       return;
     }
-    const result = applyPendingAction(repo, pending);
+    const result = await applyPendingAction(repo, pending);
     repo.clearPendingAction(ctx.chat.id);
     await ctx.reply(result);
   });
@@ -154,7 +154,7 @@ export async function handleParsedAction(
       return;
     }
 
-    const pending = createPendingAction(repo, parsed);
+    const pending = await createPendingAction(repo, parsed);
     repo.savePendingAction(chatId, pending);
     const summary = await minimax.summarizeSchedule({ userText: originalText, preview: pending.preview }).catch(() => pending.preview);
     await reply(summary);

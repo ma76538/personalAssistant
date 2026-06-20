@@ -11,45 +11,45 @@ function tempRepo(): AssistantRepository {
 }
 
 describe("pending actions", () => {
-  it("does not write add actions until confirmed", () => {
+  it("does not write add actions until confirmed", async () => {
     const repo = tempRepo();
-    const pending = createPendingAction(repo, {
+    const pending = await createPendingAction(repo, {
       intent: "add",
       task: { title: "完成報價單", durationMinutes: 120, energy: "high" },
       confidence: 1
     });
 
     expect(repo.listActiveTasks()).toHaveLength(0);
-    applyPendingAction(repo, pending);
+    await applyPendingAction(repo, pending);
     expect(repo.listActiveTasks()).toHaveLength(1);
     repo.close();
   });
 
-  it("adds multiple tasks from one pending action", () => {
+  it("adds multiple tasks from one pending action", async () => {
     const repo = tempRepo();
-    const pending = createPendingAction(repo, {
+    const pending = await createPendingAction(repo, {
       intent: "add",
       tasks: [{ title: "出 Invoice" }, { title: "寫論文", deadline: "2026-06-30T10:00:00.000Z" }],
       confidence: 1
     });
 
     expect(repo.listActiveTasks()).toHaveLength(0);
-    applyPendingAction(repo, pending);
+    await applyPendingAction(repo, pending);
     expect(repo.listActiveTasks().map((task) => task.title)).toEqual(expect.arrayContaining(["出 Invoice", "寫論文"]));
     repo.close();
   });
 
-  it("marks completion only after applying pending action", () => {
+  it("marks completion only after applying pending action", async () => {
     const repo = tempRepo();
     const task = repo.addTask({ title: "整理文件" });
-    const pending = createPendingAction(repo, {
+    const pending = await createPendingAction(repo, {
       intent: "complete",
       task: { target: String(task.id) },
       confidence: 1
     });
 
     expect(repo.getTask(task.id)?.status).toBe("pending");
-    applyPendingAction(repo, pending);
+    await applyPendingAction(repo, pending);
     expect(repo.getTask(task.id)?.status).toBe("done");
     repo.close();
   });

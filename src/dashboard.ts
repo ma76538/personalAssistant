@@ -7,17 +7,23 @@ import mime from "mime";
 import { z } from "zod";
 import { AssistantRepository } from "./db.js";
 import { deleteAppleReminderForTask, syncAppleReminders, writeTaskToAppleReminder } from "./appleReminders.js";
-import { AppleCalendarEvent, listAppleCalendarEvents } from "./appleCalendar.js";
 import { buildSchedule, BusyBlock } from "./scheduler.js";
 import { prioritizeTasks } from "./prioritizer.js";
 import { endOfLocalDay, startOfLocalDay, startOfNextWeek } from "./time.js";
 import { DeadlineTypeSchema, EnergySchema, NextActionSuggestion, QuadrantSchema, ReminderPolicySchema, Task, TaskStatusSchema, WorkSettingsSchema } from "./types.js";
 import { buildTriageSuggestion, fallbackNextAction } from "./triage.js";
 import { MiniMaxClient } from "./minimax.js";
+import {
+  calendarSettings,
+  CalendarEvent,
+  completeGoogleCalendarOAuth,
+  createGoogleCalendarAuthUrl,
+  listCalendarEvents,
+  saveCalendarSettings
+} from "./calendarProvider.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "../public");
-const DEFAULT_CALENDAR_ACCOUNT_EMAIL = process.env.CALENDAR_ACCOUNT_EMAIL || "kevin@region.mo";
 
 export function startDashboardServer(repo: AssistantRepository, port: number, minimax?: MiniMaxClient): http.Server {
   const server = http.createServer(async (request, response) => {
@@ -36,7 +42,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         if (sourceId) {
           repo.updateTask(task.id, { source: "apple-reminders", sourceId });
         }
-        reschedule(repo);
+        await reschedule(repo);
         sendJson(response, { task: repo.getTask(task.id) }, 201);
         return;
       }
@@ -49,7 +55,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
       if (url.pathname === "/api/work-capacity" && request.method === "PUT") {
         const settings = WorkSettingsSchema.parse(await readJson(request));
         const saved = repo.saveWorkSettings(settings);
-        reschedule(repo);
+        await reschedule(repo);
         sendJson(response, { ...saved, tasks: repo.listAllTasks() });
         return;
       }
@@ -85,7 +91,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         const input = CheckInSchema.parse(await readJson(request));
         const updated = applyCheckIn(repo, current, input);
         writeTaskToAppleReminder(updated);
-        reschedule(repo);
+        await reschedule(repo);
         const project = updated.isProject ? updated : updated.projectId ? repo.getTask(updated.projectId) : null;
         const preview = project && input.outcome === "complete" ? await nextActionPreview(project, input.note, minimax) : null;
         sendJson(response, { task: repo.getTask(updated.id), nextActionPreview: preview });
@@ -120,7 +126,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
 
       if (url.pathname === "/api/tasks/completed" && request.method === "DELETE") {
         const deleted = repo.deleteTasksByStatus("done");
-        reschedule(repo);
+        await reschedule(repo);
         sendJson(response, { deleted });
         return;
       }
@@ -146,7 +152,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         if (sourceId && sourceId !== updated.sourceId) {
           repo.updateTask(taskId, { source: "apple-reminders", sourceId });
         }
-        reschedule(repo);
+        await reschedule(repo);
         sendJson(response, { task: repo.getTask(taskId) });
         return;
       }
@@ -160,7 +166,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         }
         deleteAppleReminderForTask(current);
         const deleted = repo.deleteTask(taskId);
-        reschedule(repo);
+        await reschedule(repo);
         sendJson(response, { deleted: true });
         return;
       }
@@ -171,13 +177,13 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         const status = actionMatch[2] === "done" ? "done" : "cancelled";
         const updated = repo.updateTask(taskId, { status, scheduledStart: null, scheduledEnd: null });
         writeTaskToAppleReminder(updated);
-        reschedule(repo);
+        await reschedule(repo);
         sendJson(response, { task: repo.getTask(taskId) });
         return;
       }
 
       if (url.pathname === "/api/replan" && request.method === "POST") {
-        reschedule(repo);
+        await reschedule(repo);
         sendJson(response, { tasks: repo.listAllTasks() });
         return;
       }
@@ -185,7 +191,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
       if (url.pathname === "/api/sync/apple-reminders" && request.method === "POST") {
         const input = SyncInputSchema.parse(await readJson(request));
         const result = syncAppleReminders(repo, input.listName);
-        reschedule(repo);
+        await reschedule(repo);
         sendJson(response, { ...result, tasks: repo.listAllTasks() });
         return;
       }
@@ -207,20 +213,41 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
       }
 
       if (url.pathname === "/api/calendar-settings" && request.method === "GET") {
-        sendJson(response, calendarSettings(repo));
+        sendJson(response, calendarSettings(repo, requestOrigin(request)));
         return;
       }
 
       if (url.pathname === "/api/calendar-settings" && request.method === "PUT") {
         const input = CalendarSettingsSchema.parse(await readJson(request));
-        repo.saveSetting("calendar_account_email", input.accountEmail);
-        sendJson(response, calendarSettings(repo));
+        saveCalendarSettings(repo, input);
+        sendJson(response, calendarSettings(repo, requestOrigin(request)));
+        return;
+      }
+
+      if (url.pathname === "/api/calendar-settings/google-auth-url" && request.method === "POST") {
+        sendJson(response, {
+          authUrl: createGoogleCalendarAuthUrl(repo, requestOrigin(request)),
+          redirectUri: `${requestOrigin(request)}/oauth/google-calendar/callback`
+        });
         return;
       }
 
       if (url.pathname === "/api/calendar-settings/open-privacy" && request.method === "POST") {
         openCalendarPrivacySettings();
         sendJson(response, { ok: true });
+        return;
+      }
+
+      if (url.pathname === "/oauth/google-calendar/callback" && request.method === "GET") {
+        const code = url.searchParams.get("code");
+        const state = url.searchParams.get("state");
+        if (!code || !state) {
+          sendHtml(response, "Google Calendar 連接失敗", "Google 沒有回傳授權 code 或 state，請回 Dashboard 重新連接。", 400);
+          return;
+        }
+        await completeGoogleCalendarOAuth(repo, { code, state, origin: requestOrigin(request) });
+        await reschedule(repo);
+        sendHtml(response, "Google Calendar 已連接", "你可以關閉這個分頁，回到 Dashboard 按刷新。");
         return;
       }
     } catch (error) {
@@ -246,7 +273,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
       const pendingTaskIds = new Set(tasks.filter((task) => !task.quadrant).map((task) => task.id));
       const actionablePriorities = prioritized.filter((task) => !pendingTaskIds.has(task.id));
       const completed = tasks.filter((task) => task.status === "done").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-      const calendar = listAppleCalendarEvents(getCalendarAccountEmail(repo), monthStart, monthEnd);
+      const calendar = await listCalendarEvents(repo, monthStart, monthEnd);
       const busyBlocks = calendarEventsToBusyBlocks(calendar.events);
       const workSettings = repo.getWorkSettings();
       const scheduleSegments = buildSchedule(tasks, now, busyBlocks, { dailyCapacityHours: workSettings.dailyWorkCapacityHours });
@@ -328,7 +355,9 @@ const SyncInputSchema = z.object({
 });
 
 const CalendarSettingsSchema = z.object({
-  accountEmail: z.string().trim().email()
+  accountEmail: z.string().trim().email(),
+  googleClientId: z.string().trim().optional(),
+  googleClientSecret: z.string().trim().optional()
 });
 
 const PendingReviewSchema = z.object({
@@ -349,6 +378,13 @@ function sendJson(response: http.ServerResponse, payload: unknown, status = 200)
   response.end(JSON.stringify(payload));
 }
 
+function sendHtml(response: http.ServerResponse, title: string, message: string, status = 200): void {
+  response.writeHead(status, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+  response.end(
+    `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui,sans-serif;padding:40px;line-height:1.5;color:#243149;background:#f6f8fc}main{max-width:680px;margin:auto;padding:28px;border:1px solid #d8e0ec;border-radius:12px;background:white}</style></head><body><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></main></body></html>`
+  );
+}
+
 async function readJson(request: http.IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
@@ -358,10 +394,10 @@ async function readJson(request: http.IncomingMessage): Promise<unknown> {
   return raw ? JSON.parse(raw) : {};
 }
 
-function reschedule(repo: AssistantRepository): void {
+async function reschedule(repo: AssistantRepository): Promise<void> {
   const now = new Date();
   const calendarEnd = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
-  const calendar = listAppleCalendarEvents(getCalendarAccountEmail(repo), now.toISOString(), calendarEnd.toISOString());
+  const calendar = await listCalendarEvents(repo, now.toISOString(), calendarEnd.toISOString());
   repo.applySchedule(buildSchedule(repo.listActiveTasks(), now, calendarEventsToBusyBlocks(calendar.events), { dailyCapacityHours: repo.getWorkSettings().dailyWorkCapacityHours }));
 }
 
@@ -417,31 +453,26 @@ async function triagePreview(task: Task, settings: z.infer<typeof WorkSettingsSc
   });
 }
 
-function getCalendarAccountEmail(repo: AssistantRepository): string {
-  return repo.getSetting("calendar_account_email", DEFAULT_CALENDAR_ACCOUNT_EMAIL);
-}
-
-function calendarSettings(repo: AssistantRepository): { accountEmail: string; provider: string; oauthStatus: string; note: string } {
-  return {
-    accountEmail: getCalendarAccountEmail(repo),
-    provider: "macos-calendar-bridge",
-    oauthStatus: "macos_calendar_permission_required",
-    note:
-      "目前用 macOS Calendar 作為 Google Workspace 橋接：先在 macOS Internet Accounts 加入 kevin@region.mo 並啟用 Calendar，再在 Privacy & Security > Calendars 授權執行 PersonalAssistant 的 App/Terminal。授權後按「刷新」。若要不經 macOS 直連 Google Calendar，需要另設 Google OAuth client。"
-  };
-}
-
 function openCalendarPrivacySettings(): void {
   if (process.env.NODE_ENV === "test" || process.env.VITEST) return;
   execFile("open", ["x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"], () => undefined);
 }
 
-function calendarEventsToBusyBlocks(events: AppleCalendarEvent[]): BusyBlock[] {
+function calendarEventsToBusyBlocks(events: CalendarEvent[]): BusyBlock[] {
   return events.map((event) => ({
     start: event.start,
     end: event.end,
     title: event.title
   }));
+}
+
+function requestOrigin(request: http.IncomingMessage): string {
+  const proto = request.headers["x-forwarded-proto"] || "http";
+  return `${proto}://${request.headers.host || "localhost:8787"}`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] || char);
 }
 
 function startOfMonth(date: Date): Date {

@@ -66,18 +66,28 @@ describe("dashboard API", () => {
 
     const getResponse = await fetch(`${baseUrl}/api/calendar-settings`);
     expect(getResponse.status).toBe(200);
-    const current = (await getResponse.json()) as { accountEmail: string; provider: string; oauthStatus: string };
+    const current = (await getResponse.json()) as { accountEmail: string; provider: string; oauthStatus: string; hasGoogleClientSecret: boolean; redirectUri: string };
     expect(current.accountEmail).toBe("kevin@region.mo");
-    expect(current.provider).toBe("macos-calendar-bridge");
-    expect(current.oauthStatus).toBe("macos_calendar_permission_required");
+    expect(current.provider).toBe("google-calendar");
+    expect(current.oauthStatus).toBe("google_credentials_missing");
+    expect(current.hasGoogleClientSecret).toBe(false);
 
     const putResponse = await fetch(`${baseUrl}/api/calendar-settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accountEmail: "calendar@example.com" })
+      body: JSON.stringify({ accountEmail: "calendar@example.com", googleClientId: "client-id", googleClientSecret: "client-secret" })
     });
     expect(putResponse.status).toBe(200);
     expect(repo.getSetting("calendar_account_email")).toBe("calendar@example.com");
+    expect(repo.getSetting("google_calendar_client_id")).toBe("client-id");
+    expect(repo.getSetting("google_calendar_client_secret")).toBe("client-secret");
+
+    const authResponse = await fetch(`${baseUrl}/api/calendar-settings/google-auth-url`, { method: "POST" });
+    expect(authResponse.status).toBe(200);
+    const auth = (await authResponse.json()) as { authUrl: string; redirectUri: string };
+    expect(auth.authUrl).toContain("https://accounts.google.com/o/oauth2/v2/auth");
+    expect(auth.authUrl).toContain("calendar.readonly");
+    expect(auth.redirectUri).toContain("/oauth/google-calendar/callback");
 
     const invalidResponse = await fetch(`${baseUrl}/api/calendar-settings`, {
       method: "PUT",

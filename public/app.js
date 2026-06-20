@@ -31,6 +31,7 @@ const SIDEBAR_COLLAPSED_KEY = "personalAssistant.sidebarCollapsed.v1";
 const DASHBOARD_SECTION_ORDER_KEY = "personalAssistant.dashboardSectionOrder.v1";
 const DASHBOARD_SECTION_META = {
   "focus-panel": { icon: "◎", label: "今日先做" },
+  "ai-triage": { icon: "✦", label: "AI 梳理" },
   "quick-wins": { icon: "⚡", label: "2 分鐘" },
   matrix: { icon: "▦", label: "四象限" },
   "pending-bucket": { icon: "◇", label: "待定" },
@@ -58,6 +59,7 @@ $("cancel-edit").addEventListener("click", closeEditor);
 drawerBackdropEl.addEventListener("click", closeEditor);
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
+$("connect-google-calendar")?.addEventListener("click", connectGoogleCalendar);
 $("open-calendar-privacy")?.addEventListener("click", openCalendarPrivacy);
 $("save-work-capacity")?.addEventListener("click", saveWorkCapacity);
 $("run-pending-review")?.addEventListener("click", runPendingReview);
@@ -720,7 +722,7 @@ function renderCalendar() {
   const days = calendarMonthDays(new Date());
   const monthTasks = state.summary?.month || [];
   const calendar = state.summary?.calendar || { accountEmail: "kevin@region.mo", connected: false, events: [] };
-  const calendarMode = calendar.matchMode === "google-source-fallback" ? "｜Google source fallback" : "";
+  const calendarMode = calendar.provider === "google-calendar" ? "｜Google Calendar" : calendar.matchMode === "google-source-fallback" ? "｜Google source fallback" : "｜macOS fallback";
   calendarStatusEl.textContent = calendar.connected
     ? `已連結 ${calendar.accountEmail}${calendarMode}｜${(calendar.events || []).length} 個日曆項目`
     : `未同步 ${calendar.accountEmail}${calendar.error ? `：${calendar.error}` : "：需要授權 macOS Calendar"}`;
@@ -748,9 +750,16 @@ function renderCalendarSettings() {
   const settings = state.calendarSettings;
   if (!settings) return;
   setValue("calendar-account-email", settings.accountEmail);
+  setValue("google-client-id", settings.googleClientId || "");
+  setValue("google-client-secret", "");
   calendarSettingsStatusEl.textContent = `${settings.provider || "apple-calendar"}｜${settings.oauthStatus || "not_required"}`;
   const note = $("calendar-oauth-note");
-  if (note) note.textContent = settings.note || "日曆設定已載入。";
+  if (note) {
+    const secret = settings.hasGoogleClientSecret ? "Client Secret 已儲存。" : "尚未儲存 Client Secret。";
+    const token = settings.hasRefreshToken ? "Google refresh token 已儲存。" : "尚未完成 Google 授權。";
+    const redirect = settings.redirectUri ? ` Redirect URI：${settings.redirectUri}` : "";
+    note.textContent = `${settings.note || "日曆設定已載入。"} ${secret} ${token}${redirect}`;
+  }
 }
 
 async function openCalendarPrivacy() {
@@ -843,7 +852,11 @@ async function saveCalendarSettings() {
   try {
     const response = await requestJson("/api/calendar-settings", {
       method: "PUT",
-      body: JSON.stringify({ accountEmail: $("calendar-account-email").value.trim() })
+      body: JSON.stringify({
+        accountEmail: $("calendar-account-email").value.trim(),
+        googleClientId: $("google-client-id").value.trim(),
+        googleClientSecret: $("google-client-secret").value.trim()
+      })
     });
     state.calendarSettings = response;
     renderCalendarSettings();
@@ -851,6 +864,17 @@ async function saveCalendarSettings() {
     lastUpdatedEl.textContent = "日曆設定已儲存，已重新載入月曆。";
   } catch (error) {
     calendarSettingsStatusEl.textContent = error instanceof Error ? `儲存失敗：${error.message}` : "儲存失敗";
+  }
+}
+
+async function connectGoogleCalendar() {
+  try {
+    const response = await requestJson("/api/calendar-settings/google-auth-url", { method: "POST" });
+    if (!response.authUrl) throw new Error("後端沒有回傳 Google 授權 URL。");
+    window.open(response.authUrl, "_blank", "noopener,noreferrer");
+    calendarSettingsStatusEl.textContent = `已開啟 Google 授權頁。Redirect URI：${response.redirectUri || ""}`;
+  } catch (error) {
+    calendarSettingsStatusEl.textContent = error instanceof Error ? `Google 連接失敗：${error.message}` : "Google 連接失敗";
   }
 }
 
