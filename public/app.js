@@ -427,7 +427,6 @@ function taskRow(task, rank) {
       <button class="${status === "in_progress" ? "active" : ""}" data-action="status" data-status="in_progress" data-id="${task.id}" type="button">進行中</button>
       <button data-action="check-in" data-outcome="complete" data-id="${task.id}" type="button">完成</button>
       <button data-action="check-in" data-outcome="stuck" data-id="${task.id}" type="button">卡住</button>
-      <button data-action="check-in" data-outcome="defer" data-id="${task.id}" type="button">延後</button>
       ${task.isProject ? `<button data-action="next-action" data-id="${task.id}" type="button">下一步</button>` : ""}
       <button data-action="pending-bucket" data-id="${task.id}" type="button">放待定</button>
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
