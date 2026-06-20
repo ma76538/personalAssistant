@@ -9,6 +9,7 @@
 - [Dashboard 與任務操作設計](./dashboard-design.md)
 - [Telegram 提醒與每日摘要](./telegram-reminders.md)
 - [Apple Calendar / kevin@region.mo 月曆整合](./calendar-integration.md)
+- [LLM 任務梳理、提醒與經驗沉澱](./llm-workflow-experience.md)
 - [一致性檢查與已知限制](./consistency-and-known-issues.md)
 
 ## 目前核心結論
@@ -18,4 +19,4 @@
 - Dashboard 的主要操作界面是四象限；2 分鐘任務獨立顯示，避免在四象限重複出現。
 - Telegram 每日摘要和定時提醒只應提醒「緊急重要」事項，降低噪音。
 - 月曆視圖應結合本地已排程任務和 `kevin@region.mo` Apple Calendar events。
-
+- LLM 應負責理解、排序建議、追問和經驗沉澱；真正改任務或排程前仍要 preview / confirm。
