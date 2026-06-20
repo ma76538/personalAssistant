@@ -35,3 +35,12 @@
 .date-picker-input{cursor:pointer;color-scheme:light}
 .date-picker-input::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.72;padding:6px;border-radius:6px;background:rgba(109,164,216,.14)}
 .date-picker-input::-webkit-calendar-picker-indicator:hover{opacity:1;background:rgba(109,164,216,.22)}
+.matrix-head{align-items:center;margin-bottom:10px}
+.matrix-title-line{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap}
+.matrix-title-line h2{display:flex;align-items:center;gap:8px;font-size:18px;line-height:1.15}
+.matrix-title-line h2 span{margin-right:0}
+.matrix-title-line em{display:inline-flex;align-items:center;min-height:24px;padding:3px 9px;border:1px solid rgba(125,145,174,.22);border-radius:999px;background:rgba(255,255,255,.58);color:#6d7b91;font-size:12px;font-style:normal;font-weight:800;white-space:nowrap}
+.matrix-card{padding:14px}
+.matrix-list{gap:6px}
+.matrix-status-actions{min-width:250px}
+.matrix-status-actions button{height:27px;padding:0 7px}

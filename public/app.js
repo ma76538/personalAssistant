@@ -369,7 +369,7 @@ function renderMatrix() {
     .map(([key, icon, title, subtitle, urgent, important]) => {
       const tasks = prioritizeVisibleTasks(filtered(quadrants[key] || []).filter((task) => !isQuickWin(task)));
       return `<section class="matrix-card ${key}" data-quadrant="${key}" data-urgent="${urgent}" data-important="${important}">
-        <header class="matrix-head"><div><h2><span>${icon}</span>${title}</h2><p>${subtitle}</p></div><strong>${tasks.length}</strong></header>
+        <header class="matrix-head"><div class="matrix-title-line"><h2><span>${icon}</span>${title}</h2><em>${subtitle}</em></div><strong>${tasks.length}</strong></header>
         <div class="matrix-list">${tasks.length ? tasks.map((task, index) => taskRow(task, index + 1)).join("") : `<div class="drop-empty">拖拉任務到這裡</div>`}</div>
       </section>`;
     })
@@ -424,7 +424,6 @@ function taskRow(task, rank) {
     </div>
     <div class="matrix-status-actions" aria-label="改變任務狀態">
       ${dueChip(task, needsDue)}
-      <button class="${status === "pending" ? "active" : ""}" data-action="status" data-status="pending" data-id="${task.id}" type="button">待定</button>
       <button class="${status === "in_progress" ? "active" : ""}" data-action="status" data-status="in_progress" data-id="${task.id}" type="button">進行中</button>
       <button data-action="check-in" data-outcome="complete" data-id="${task.id}" type="button">完成</button>
       <button data-action="check-in" data-outcome="stuck" data-id="${task.id}" type="button">卡住</button>
