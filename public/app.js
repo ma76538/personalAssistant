@@ -324,6 +324,7 @@ function filtered(tasks) {
 }
 
 function renderMetrics() {
+  if (!metricsEl) return;
   const summary = state.summary || {};
   const total = summary.total || 0;
   const active = summary.active || 0;
