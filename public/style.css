@@ -32,3 +32,6 @@
 .compact-pending .pending-actions{gap:4px}
 .compact-pending .pending-actions button{height:25px;padding:0 7px;border-radius:7px;font-size:11px}
 @media(max-width:900px){.compact-pending .pending-list{grid-template-columns:1fr}.compact-pending .pending-task-main{grid-template-columns:1fr}.compact-pending .pending-task-main small{white-space:normal}}
+.date-picker-input{cursor:pointer;color-scheme:light}
+.date-picker-input::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.72;padding:6px;border-radius:6px;background:rgba(109,164,216,.14)}
+.date-picker-input::-webkit-calendar-picker-indicator:hover{opacity:1;background:rgba(109,164,216,.22)}

@@ -43,6 +43,10 @@ $("run-pending-review")?.addEventListener("click", runPendingReview);
 reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
 reminderSettingsFormEl.addEventListener("change", scheduleReminderSettingsSave);
 $("reset-reminder-settings").addEventListener("click", resetReminderSettings);
+["earliestStart", "deadline"].forEach((id) => {
+  const input = $(id);
+  input?.addEventListener("click", () => input.showPicker?.());
+});
 document.querySelectorAll(".side-nav a").forEach((link) =>
   link.addEventListener("click", () => {
     document.querySelectorAll(".side-nav a").forEach((item) => item.classList.remove("active"));
@@ -860,16 +864,13 @@ function toLocalInputValue(value) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  const [day, time] = local.split("T");
-  const [year, month, dateOfMonth] = day.split("-");
-  return `${year} - ${month} - ${dateOfMonth} ${time}`;
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
 function fromLocalInputValue(value) {
   const raw = String(value || "").trim();
   if (!raw) return null;
-  const normalized = raw.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").replace(" ", "T");
+  const normalized = raw.includes("T") ? raw : raw.replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").replace(" ", "T");
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
