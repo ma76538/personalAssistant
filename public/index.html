@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>個人排程助理</title>
-    <link rel="stylesheet" href="./style.css?v=20260619-1" />
+    <link rel="stylesheet" href="./style.css?v=20260620-1" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand-mark"><span class="menu-icon">☰</span><span class="calendar-icon">▦</span><strong>個人排程助理</strong></div>
         <nav class="side-nav">
-          <a class="active" href="#matrix"><span>▦</span>總覽</a><a href="#pending-bucket"><span>◇</span>待定</a><a href="#quick-wins"><span>⚡</span>2 分鐘</a><a href="#calendar"><span>◴</span>日曆</a><a href="#completed-bin"><span>☑</span>完成箱</a><a href="#reminders"><span>♧</span>提醒</a><a href="#reports"><span>▥</span>統計報告</a>
+          <a class="active" href="#matrix"><span>▦</span>總覽</a><a href="#gantt"><span>▤</span>甘特圖</a><a href="#pending-bucket"><span>◇</span>待定</a><a href="#quick-wins"><span>⚡</span>2 分鐘</a><a href="#calendar"><span>◴</span>日曆</a><a href="#completed-bin"><span>☑</span>完成箱</a><a href="#reminders"><span>♧</span>提醒</a><a href="#reports"><span>▥</span>統計報告</a>
         </nav>
         <section class="priority-legend"><h3>優先順序</h3><ol><li><span class="legend-dot p5"></span><b>1</b>最高</li><li><span class="legend-dot p4"></span><b>2</b>高</li><li><span class="legend-dot p3"></span><b>3</b>中</li><li><span class="legend-dot p2"></span><b>4</b>低</li><li><span class="legend-dot p1"></span><b>5</b>最低</li></ol></section>
         <button class="collapse-menu" type="button">‹ 收合選單</button>
@@ -21,8 +21,8 @@
         <section id="secretary-controls" class="panel secretary-controls"><div class="panel-head"><div><p class="eyebrow">Secretary Control</p><h2>電子秘書控制</h2><p id="work-capacity-status" class="muted">每日容量載入中</p></div><button id="run-pending-review" type="button">整理待定</button></div><div class="secretary-grid"><label>每日可用工作時間（小時）<input id="work-capacity-hours" type="number" min="0.5" max="12" step="0.5" /></label><label class="inline-check secretary-toggle"><input id="secretary-mvp-mode" type="checkbox" /> 電子秘書 MVP 仍屬最高價值項目</label><button id="save-work-capacity" type="button">儲存並重排</button></div><div id="pending-review-status" class="pending-review-status"></div></section>
         <section id="quick-wins" class="quick-wins panel"><div class="panel-head"><div><p class="eyebrow">Quick Wins</p><h2>2 分鐘完成</h2></div><strong id="quick-wins-count">0</strong></div><div id="quick-wins-list" class="quick-wins-list"></div></section>
         <section id="matrix" class="matrix-grid"></section>
+        <section id="gantt" class="gantt-panel panel"><div class="panel-head"><div><p class="eyebrow">Schedule</p><h2>甘特圖</h2><p class="muted">根據四象限、deadline、每日容量與日曆忙碌時間產生的工作段。</p></div><strong id="gantt-count">0</strong></div><div id="gantt-board" class="gantt-board"></div></section>
         <section id="pending-bucket" class="pending-panel panel"><div class="panel-head"><div><p class="eyebrow">Inbox</p><h2>待定</h2><p class="muted">先記低，未決定幾時做；不進排程和甘特圖。</p></div><strong id="pending-bucket-count">0</strong></div><div id="pending-bucket-list" class="pending-list"></div></section>
-        <section id="gantt" class="gantt-panel panel"><div class="panel-head"><div><p class="eyebrow">Schedule</p><h2>甘特圖</h2><p class="muted">任務工作段會避開日曆忙碌時間。</p></div></div><div id="gantt-board" class="gantt-board"></div></section>
         <section id="calendar" class="calendar-panel panel"><div class="panel-head"><div><p class="eyebrow">Calendar</p><h2>每月日曆</h2><p id="calendar-status" class="muted"></p></div><button id="refresh" type="button">刷新</button></div><div id="calendar-board" class="calendar-board"></div></section>
         <section id="calendar-settings" class="panel calendar-settings-panel"><div class="panel-head"><div><p class="eyebrow">Calendar Connect</p><h2>日曆連接設定</h2><p id="calendar-settings-status" class="muted">載入中</p></div><button id="save-calendar-settings" type="button">儲存日曆設定</button></div><div class="calendar-settings-grid"><label>日曆帳戶電郵<input id="calendar-account-email" type="email" placeholder="kevin@region.mo" /></label><div class="calendar-oauth-note"><strong>OAuth</strong><p id="calendar-oauth-note">目前使用 macOS Calendar 權限連接 Apple Calendar；Google/Microsoft OAuth 會在後續加入 client 設定後啟用。</p></div></div></section>
         <section id="completed-bin" class="completed-bin panel" aria-label="完成箱">
@@ -34,6 +34,6 @@
       </main>
     </div>
     <div id="drawer-backdrop" class="drawer-backdrop" hidden></div><aside id="drawer" class="drawer" aria-hidden="true"><form id="task-form"><div class="drawer-head"><div><p class="eyebrow">Editor</p><h2 id="drawer-title">新增任務</h2></div><button id="close-drawer" type="button">關閉</button></div><input id="task-id" type="hidden" /><label>任務標題<input id="title" required maxlength="120" /></label><label>分類<select id="task-quadrant"><option value="pending-bucket">待定</option><option value="urgent-important">緊急重要</option><option value="urgent-not-important">緊急不重要</option><option value="not-urgent-important">不緊急重要</option><option value="not-urgent-not-important">不緊急不重要</option></select></label><label class="inline-check quick-win-toggle"><input id="quick-win-toggle" type="checkbox" /> 2分鐘完成</label><label>Start date<input id="earliestStart" type="text" inputmode="numeric" placeholder="YYYY - MM - DD HH:MM" /></label><label>Due date<input id="deadline" type="text" inputmode="numeric" placeholder="YYYY - MM - DD HH:MM" /></label><div class="form-grid"><label>價值分<select id="value-score"><option value="5">5｜最高：電子秘書/有 PO 且符合方向</option><option value="4">4｜有 PO 但不符合方向</option><option value="3">3｜無 PO 但符合方向</option><option value="2">2｜可能找到金主</option><option value="1">1｜低商業路徑</option></select></label><label>Deadline 類型<select id="deadline-type"><option value="none">未定</option><option value="soft">Soft｜自己設定</option><option value="hard">Hard｜外部後果</option></select></label></div><label class="inline-check quick-win-toggle"><input id="is-project" type="checkbox" /> 這是一個長項目</label><label>所屬項目 ID<input id="project-id" type="number" min="1" step="1" placeholder="例如 12，可留空" /></label><label>進度備註<textarea id="progress-note" rows="3" placeholder="完成了什麼、卡在哪、下一步線索"></textarea></label><p class="form-note">勾選「2分鐘完成」會自動設為 2 分鐘，並顯示在最頂部快速處理區。長項目會保留大目標，提醒以 60-90 分鐘下一步為主。</p><div class="drawer-actions"><button id="cancel-edit" type="button">取消</button><button class="primary" type="submit">儲存</button></div></form></aside>
-    <script src="./app.js?v=20260619-1" type="module"></script>
+    <script src="./app.js?v=20260620-1" type="module"></script>
   </body>
 </html>

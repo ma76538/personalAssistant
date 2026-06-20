@@ -7,6 +7,7 @@ const pendingBucketCountEl = $("pending-bucket-count");
 const quickWinsListEl = $("quick-wins-list");
 const quickWinsCountEl = $("quick-wins-count");
 const ganttBoardEl = $("gantt-board");
+const ganttCountEl = $("gantt-count");
 const calendarBoardEl = $("calendar-board");
 const calendarStatusEl = $("calendar-status");
 const completedListEl = $("completed-list");
@@ -438,6 +439,7 @@ function renderGantt() {
     .filter((item) => item.scheduledStart && item.scheduledEnd)
     .sort((a, b) => new Date(a.scheduledStart) - new Date(b.scheduledStart))
     .slice(0, 40);
+  if (ganttCountEl) ganttCountEl.textContent = String(items.length);
 
   ganttBoardEl.innerHTML = items.length
     ? items
@@ -459,7 +461,7 @@ function renderGantt() {
           </article>`;
         })
         .join("")
-    : `<div class="drop-empty">暫時沒有可排程的工作段。請先補 deadline。</div>`;
+    : `<div class="drop-empty">暫時沒有可排程的工作段。四象限任務需要 Due date，並且不是已完成/取消，才會進甘特圖。</div>`;
 }
 
 function ganttLeft(date) {
