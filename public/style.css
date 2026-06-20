@@ -73,3 +73,6 @@
 .dashboard-section.section-drop-before::before,.dashboard-section.section-drop-after::after{content:"";position:absolute;left:0;right:0;height:3px;border-radius:999px;background:#4da7aa;box-shadow:0 0 0 4px rgba(77,167,170,.14);z-index:5}
 .dashboard-section.section-drop-before::before{top:-7px}
 .dashboard-section.section-drop-after::after{bottom:-7px}
+.gantt-row.unscheduled{background:rgba(255,251,244,.82);border-style:dashed}
+.gantt-track.gantt-unscheduled{display:flex;align-items:center;min-height:30px;height:auto;padding:0 10px;border:1px dashed rgba(232,155,88,.4);background:rgba(255,255,255,.58);overflow:visible}
+.gantt-track.gantt-unscheduled span{position:static!important;display:inline-flex;align-items:center;width:auto!important;height:auto!important;min-height:0!important;background:transparent!important;box-shadow:none!important;color:#a76024;font-size:12px;font-weight:800}

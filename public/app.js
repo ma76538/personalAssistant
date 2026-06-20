@@ -38,6 +38,7 @@ const DASHBOARD_SECTION_META = {
   reminders: { icon: "♧", label: "提醒" }
 };
 const DASHBOARD_SECTION_IDS = Object.keys(DASHBOARD_SECTION_META);
+const GANTT_QUADRANTS = new Set(["urgent-important", "urgent-not-important", "not-urgent-important"]);
 
 let draggedTaskId = null;
 let pointerDrag = null;
@@ -550,18 +551,35 @@ function taskRow(task, rank) {
 function renderGantt() {
   const segments = state.summary?.scheduleSegments || [];
   const calendar = state.summary?.calendar || { events: [] };
+  const scheduledTaskIds = new Set(segments.map((segment) => segment.taskId));
+  const unscheduledTasks = filtered(state.tasks)
+    .filter((task) => isGanttCandidate(task) && !scheduledTaskIds.has(task.id))
+    .sort(compareGanttTasks)
+    .map((task) => ({ type: "unscheduled", task, title: task.title }));
   const items = [
     ...segments.map((segment) => ({ type: "task", ...segment, task: state.tasks.find((task) => task.id === segment.taskId) })),
-    ...(calendar.events || []).filter((event) => !event.allDay).map((event) => ({ type: "busy", scheduledStart: event.start, scheduledEnd: event.end, title: event.title }))
+    ...(calendar.events || []).filter((event) => !event.allDay).map((event) => ({ type: "busy", scheduledStart: event.start, scheduledEnd: event.end, title: event.title })),
+    ...unscheduledTasks
   ]
-    .filter((item) => item.scheduledStart && item.scheduledEnd)
-    .sort((a, b) => new Date(a.scheduledStart) - new Date(b.scheduledStart))
+    .filter((item) => item.type === "unscheduled" || (item.scheduledStart && item.scheduledEnd))
+    .sort(compareGanttItems)
     .slice(0, 40);
   if (ganttCountEl) ganttCountEl.textContent = String(items.length);
 
   ganttBoardEl.innerHTML = items.length
     ? `${ganttAxis()}${items
         .map((item) => {
+          if (item.type === "unscheduled") {
+            const task = item.task;
+            const badges = `<span class="gantt-time">${ganttUnscheduledLabel(task)}</span>
+              <span class="gantt-importance priority-${task.priority ?? 3}"><i></i>重要 ${task.valueScore ?? 3}</span>
+              <span class="gantt-priority">優先 ${task.priority ?? 3}</span>
+              ${task.quadrant ? `<span>${quadrantLabel(task.quadrant)}</span>` : ""}`;
+            return `<article class="gantt-row unscheduled priority-${task.priority ?? 3}">
+              <div class="gantt-label"><strong>${esc(task.title)}</strong><small>${ganttUnscheduledReason(task)}</small><div class="gantt-badges">${badges}</div></div>
+              <div class="gantt-track gantt-unscheduled"><span>${esc(ganttUnscheduledReason(task))}</span></div>
+            </article>`;
+          }
           const start = new Date(item.scheduledStart);
           const end = new Date(item.scheduledEnd);
           const left = ganttLeft(start);
@@ -588,6 +606,39 @@ function renderGantt() {
         })
         .join("")}`
     : `<div class="drop-empty">暫時沒有可排程的工作段。只有緊急重要、緊急不重要、不緊急重要，且不是 2 分鐘完成的任務，才會進甘特圖。</div>`;
+}
+
+function isGanttCandidate(task) {
+  return !["done", "cancelled"].includes(task.status) && task.durationMinutes > 2 && GANTT_QUADRANTS.has(task.quadrant);
+}
+
+function compareGanttItems(a, b) {
+  if (a.type !== "unscheduled" && b.type !== "unscheduled") {
+    return new Date(a.scheduledStart) - new Date(b.scheduledStart);
+  }
+  if (a.type !== "unscheduled") return -1;
+  if (b.type !== "unscheduled") return 1;
+  return compareGanttTasks(a.task, b.task);
+}
+
+function compareGanttTasks(a, b) {
+  const aDeadline = a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY;
+  const bDeadline = b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY;
+  if (aDeadline !== bDeadline) return aDeadline - bDeadline;
+  if ((a.valueScore ?? 3) !== (b.valueScore ?? 3)) return (b.valueScore ?? 3) - (a.valueScore ?? 3);
+  return (b.priority ?? 3) - (a.priority ?? 3);
+}
+
+function ganttUnscheduledReason(task) {
+  if (!task.deadline) return "待補 Due Date 後才會自動排程";
+  if (new Date(task.deadline) < new Date()) return "Due Date 已過，請重排或更新期限";
+  if (task.status === "in_progress") return "進行中，但未有時間段";
+  return "未能排入目前工作容量";
+}
+
+function ganttUnscheduledLabel(task) {
+  if (!task.deadline) return "待補 Due";
+  return `Due ${shortMonthDay(task.deadline)}`;
 }
 
 function ganttLeft(date) {
