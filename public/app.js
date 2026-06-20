@@ -23,9 +23,21 @@ const reminderSettingsStatusEl = $("reminder-settings-status");
 const calendarSettingsStatusEl = $("calendar-settings-status");
 const workCapacityStatusEl = $("work-capacity-status");
 const pendingReviewStatusEl = $("pending-review-status");
+const sideNavEl = document.querySelector(".side-nav");
 const workspaceEl = document.querySelector(".workspace");
 const DASHBOARD_SECTION_ORDER_KEY = "personalAssistant.dashboardSectionOrder.v1";
-const DASHBOARD_SECTION_IDS = ["focus-panel", "quick-wins", "matrix", "pending-bucket", "gantt", "calendar", "calendar-settings", "completed-bin", "reminders"];
+const DASHBOARD_SECTION_META = {
+  "focus-panel": { icon: "◎", label: "今日先做" },
+  "quick-wins": { icon: "⚡", label: "2 分鐘" },
+  matrix: { icon: "▦", label: "四象限" },
+  "pending-bucket": { icon: "◇", label: "待定" },
+  gantt: { icon: "▤", label: "甘特圖" },
+  calendar: { icon: "◴", label: "日曆" },
+  "calendar-settings": { icon: "⚙", label: "日曆設定" },
+  "completed-bin": { icon: "☑", label: "完成箱" },
+  reminders: { icon: "♧", label: "提醒" }
+};
+const DASHBOARD_SECTION_IDS = Object.keys(DASHBOARD_SECTION_META);
 
 let draggedTaskId = null;
 let pointerDrag = null;
@@ -53,12 +65,12 @@ setupSectionDragging();
   const input = $(id);
   input?.addEventListener("click", () => input.showPicker?.());
 });
-document.querySelectorAll(".side-nav a").forEach((link) =>
-  link.addEventListener("click", () => {
-    document.querySelectorAll(".side-nav a").forEach((item) => item.classList.remove("active"));
-    link.classList.add("active");
-  })
-);
+sideNavEl?.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const link = target?.closest("a");
+  if (!link || !sideNavEl.contains(link)) return;
+  setActiveSideNav(link.hash.slice(1));
+});
 
 matrixEl.addEventListener("click", handleTaskButtonClick);
 matrixEl.addEventListener("dragstart", handleDragStart);
@@ -129,15 +141,48 @@ function setupSectionDragging() {
   });
   workspaceEl.addEventListener("dragover", handleSectionDragOver);
   workspaceEl.addEventListener("drop", handleSectionDrop);
+  renderSideNav();
 }
 
 function restoreSectionOrder() {
-  const saved = JSON.parse(localStorage.getItem(DASHBOARD_SECTION_ORDER_KEY) || "[]");
+  const saved = readSavedSectionOrder();
   const orderedIds = [...saved.filter((id) => DASHBOARD_SECTION_IDS.includes(id)), ...DASHBOARD_SECTION_IDS.filter((id) => !saved.includes(id))];
   orderedIds.forEach((id) => {
     const section = $(id);
     if (section) workspaceEl.appendChild(section);
   });
+}
+
+function readSavedSectionOrder() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DASHBOARD_SECTION_ORDER_KEY) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function currentSectionOrder() {
+  const visibleOrder = workspaceEl
+    ? [...workspaceEl.querySelectorAll(".dashboard-section")].map((section) => section.id).filter((id) => DASHBOARD_SECTION_IDS.includes(id))
+    : [];
+  return [...visibleOrder, ...DASHBOARD_SECTION_IDS.filter((id) => !visibleOrder.includes(id))];
+}
+
+function renderSideNav(activeId = sideNavEl?.querySelector("a.active")?.hash?.slice(1) || "focus-panel") {
+  if (!sideNavEl) return;
+  const order = currentSectionOrder();
+  sideNavEl.innerHTML = order
+    .map((id) => {
+      const meta = DASHBOARD_SECTION_META[id];
+      return `<a class="${id === activeId ? "active" : ""}" href="#${id}"><span>${meta.icon}</span>${esc(meta.label)}</a>`;
+    })
+    .join("");
+}
+
+function setActiveSideNav(activeId) {
+  if (!sideNavEl) return;
+  sideNavEl.querySelectorAll("a").forEach((item) => item.classList.toggle("active", item.hash === `#${activeId}`));
 }
 
 function handleSectionDragStart(event) {
@@ -181,6 +226,7 @@ function handleSectionDrop(event) {
 function saveSectionOrder() {
   const order = [...workspaceEl.querySelectorAll(".dashboard-section")].map((section) => section.id).filter(Boolean);
   localStorage.setItem(DASHBOARD_SECTION_ORDER_KEY, JSON.stringify(order));
+  renderSideNav(sideNavEl?.querySelector("a.active")?.hash?.slice(1) || order[0]);
 }
 
 taskFormEl.addEventListener("submit", async (event) => {
