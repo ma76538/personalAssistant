@@ -23,9 +23,13 @@ const reminderSettingsStatusEl = $("reminder-settings-status");
 const calendarSettingsStatusEl = $("calendar-settings-status");
 const workCapacityStatusEl = $("work-capacity-status");
 const pendingReviewStatusEl = $("pending-review-status");
+const workspaceEl = document.querySelector(".workspace");
+const DASHBOARD_SECTION_ORDER_KEY = "personalAssistant.dashboardSectionOrder.v1";
+const DASHBOARD_SECTION_IDS = ["focus-panel", "quick-wins", "matrix", "pending-bucket", "gantt", "calendar", "calendar-settings", "completed-bin", "reminders"];
 
 let draggedTaskId = null;
 let pointerDrag = null;
+let draggedSectionId = null;
 let lastMovedTaskId = null;
 let lastDueWarningTaskId = null;
 let reminderSettingsSaveTimer = null;
@@ -44,6 +48,7 @@ $("run-pending-review")?.addEventListener("click", runPendingReview);
 reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
 reminderSettingsFormEl.addEventListener("change", scheduleReminderSettingsSave);
 $("reset-reminder-settings").addEventListener("click", resetReminderSettings);
+setupSectionDragging();
 ["earliestStart", "deadline"].forEach((id) => {
   const input = $(id);
   input?.addEventListener("click", () => input.showPicker?.());
@@ -110,6 +115,73 @@ completedListEl.addEventListener("drop", async (event) => {
   await updateTaskStatus(draggedTaskId, "done");
   await loadDashboard();
 });
+
+function setupSectionDragging() {
+  if (!workspaceEl) return;
+  restoreSectionOrder();
+  DASHBOARD_SECTION_IDS.forEach((id) => {
+    const section = $(id);
+    if (!section) return;
+    section.classList.add("dashboard-section");
+    section.draggable = true;
+    section.addEventListener("dragstart", handleSectionDragStart);
+    section.addEventListener("dragend", handleSectionDragEnd);
+  });
+  workspaceEl.addEventListener("dragover", handleSectionDragOver);
+  workspaceEl.addEventListener("drop", handleSectionDrop);
+}
+
+function restoreSectionOrder() {
+  const saved = JSON.parse(localStorage.getItem(DASHBOARD_SECTION_ORDER_KEY) || "[]");
+  const orderedIds = [...saved.filter((id) => DASHBOARD_SECTION_IDS.includes(id)), ...DASHBOARD_SECTION_IDS.filter((id) => !saved.includes(id))];
+  orderedIds.forEach((id) => {
+    const section = $(id);
+    if (section) workspaceEl.appendChild(section);
+  });
+}
+
+function handleSectionDragStart(event) {
+  if (event.target.closest("button, input, select, textarea, a, .task-row, .quick-task, .completed-task, .pending-task, .matrix-card")) {
+    return;
+  }
+  const section = event.currentTarget;
+  draggedSectionId = section.id;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", draggedSectionId);
+  section.classList.add("section-dragging");
+}
+
+function handleSectionDragEnd(event) {
+  event.currentTarget.classList.remove("section-dragging");
+  document.querySelectorAll(".section-drop-before,.section-drop-after").forEach((item) => item.classList.remove("section-drop-before", "section-drop-after"));
+  draggedSectionId = null;
+}
+
+function handleSectionDragOver(event) {
+  if (!draggedSectionId) return;
+  const target = event.target.closest(".dashboard-section");
+  if (!target || target.id === draggedSectionId) return;
+  event.preventDefault();
+  const before = event.clientY < target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2;
+  document.querySelectorAll(".section-drop-before,.section-drop-after").forEach((item) => item.classList.remove("section-drop-before", "section-drop-after"));
+  target.classList.add(before ? "section-drop-before" : "section-drop-after");
+}
+
+function handleSectionDrop(event) {
+  if (!draggedSectionId) return;
+  const target = event.target.closest(".dashboard-section");
+  if (!target || target.id === draggedSectionId) return;
+  event.preventDefault();
+  const dragged = $(draggedSectionId);
+  const before = event.clientY < target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2;
+  workspaceEl.insertBefore(dragged, before ? target : target.nextSibling);
+  saveSectionOrder();
+}
+
+function saveSectionOrder() {
+  const order = [...workspaceEl.querySelectorAll(".dashboard-section")].map((section) => section.id).filter(Boolean);
+  localStorage.setItem(DASHBOARD_SECTION_ORDER_KEY, JSON.stringify(order));
+}
 
 taskFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
