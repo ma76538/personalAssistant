@@ -206,7 +206,7 @@ async function moveTaskToQuadrant(taskId, quadrant) {
   lastDueWarningTaskId = isUrgentQuadrant(targetQuadrant) && !task.deadline ? task.id : null;
   await loadDashboard();
   if (lastDueWarningTaskId) {
-    lastUpdatedEl.textContent = `「${task.title}」已移到緊急象限，請補回 Due day。`;
+    lastUpdatedEl.textContent = `「${task.title}」已移到緊急象限，請補回 Due Date。`;
   } else {
     lastUpdatedEl.textContent = `已移動「${task.title}」到${quadrant.querySelector("h2")?.textContent?.trim() || "新象限"}`;
   }
@@ -412,7 +412,7 @@ function taskRow(task, rank) {
   const status = normalizeStatusValue(task.status);
   const urgentMissingDue = !task.deadline;
   const needsDue = urgentMissingDue || lastDueWarningTaskId === task.id;
-  const startMarkup = task.earliestStart ? `<span>Start day ${shortDate(task.earliestStart)}</span>` : "";
+  const startMarkup = task.earliestStart ? `<span>Start Date ${shortDate(task.earliestStart)}</span>` : "";
   return `<article class="task-row priority-${task.priority} ${needsDue ? "needs-due" : ""}" draggable="true" data-id="${task.id}">
     <span class="priority-bar"></span>
     <span class="task-rank">${rank}</span>
@@ -420,7 +420,7 @@ function taskRow(task, rank) {
       <strong>${esc(task.title)}</strong>
       ${taskMeta(task)}
       ${startMarkup ? `<div class="task-dates">${startMarkup}</div>` : ""}
-      ${needsDue ? `<p class="due-warning">每個任務都必須加 Due day，未補前不會自動排程。</p>` : ""}
+      ${needsDue ? `<p class="due-warning">每個任務都必須加 Due Date，未補前不會自動排程。</p>` : ""}
     </div>
     <div class="matrix-status-actions" aria-label="改變任務狀態">
       ${dueChip(task, needsDue)}
@@ -476,7 +476,7 @@ function renderGantt() {
           </article>`;
         })
         .join("")
-    : `<div class="drop-empty">暫時沒有可排程的工作段。四象限任務需要 Due date，並且不是已完成/取消，才會進甘特圖。</div>`;
+    : `<div class="drop-empty">暫時沒有可排程的工作段。四象限任務需要 Due Date，並且不是已完成/取消，才會進甘特圖。</div>`;
 }
 
 function ganttLeft(date) {
@@ -486,10 +486,10 @@ function ganttLeft(date) {
 
 function dueChip(task, needsDue = false) {
   if (task.deadline) {
-    return `<button class="due-chip" data-action="edit" data-id="${task.id}" type="button" title="編輯 Due day">${shortMonthDay(task.deadline)}</button>`;
+    return `<button class="due-chip" data-action="edit" data-id="${task.id}" type="button" title="編輯 Due Date">${shortMonthDay(task.deadline)}</button>`;
   }
   if (needsDue) {
-    return `<button class="due-chip missing" data-action="edit" data-id="${task.id}" type="button" title="補回 Due day">加 Due</button>`;
+    return `<button class="due-chip missing" data-action="edit" data-id="${task.id}" type="button" title="補回 Due Date">加 Due</button>`;
   }
   return "";
 }

@@ -45,7 +45,7 @@ Dashboard 或 Telegram 修改任務時，系統會寫回 Reminders：
 
 - 標題
 - notes/context
-- due date
+- Due Date
 - priority
 - completion status
 - 所屬 `待定` 或四象限 list

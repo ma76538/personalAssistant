@@ -56,9 +56,9 @@
 
 ### 每個項目原則上要有 deadline
 
-需要排程、提醒或被判斷為緊急的任務必須有 due date。若拖入緊急象限但沒有 due date，Dashboard 要高亮提醒補回。
+需要排程、提醒或被判斷為緊急的任務必須有 Due Date。若拖入緊急象限但沒有 Due Date，Dashboard 要高亮提醒補回。
 
-待定任務可以暫時沒有 due date，因為它尚未進入正式排程。
+待定任務可以暫時沒有 Due Date，因為它尚未進入正式排程。
 
 ### 長任務
 
@@ -106,8 +106,8 @@
 
 - 任務標題
 - 分類：待定、2 分鐘完成、四象限
-- Start date
-- Due date
+- Start Date
+- Due Date
 - 價值分
 - Deadline 類型
 - 長項目/所屬項目/進度備註
@@ -148,7 +148,7 @@ Calendar 和 Reminders 分工不同：
 - Reminders 是任務入口。
 - Calendar 是活動、會議、固定時間點和忙碌時間來源。
 
-Calendar 第一版只讀，不寫入任務 focus block。月曆顯示任務時，任務應按 due date 放入月曆。
+Calendar 第一版只讀，不寫入任務 focus block。月曆顯示任務時，任務應按 Due Date 放入月曆。
 
 `kevin@region.mo` 目前透過 macOS Calendar / EventKit 橋接讀取。直接 Google OAuth 尚未完成，後台只先保存電郵和說明狀態。
 
