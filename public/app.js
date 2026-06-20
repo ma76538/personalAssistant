@@ -308,10 +308,10 @@ function pendingTask(task) {
       ${taskMeta(task)}
     </div>
     <div class="pending-actions">
-      <button data-action="quadrant" data-quadrant="urgent-important" data-id="${task.id}" type="button">緊急重要</button>
-      <button data-action="quadrant" data-quadrant="urgent-not-important" data-id="${task.id}" type="button">緊急不重要</button>
-      <button data-action="quadrant" data-quadrant="not-urgent-important" data-id="${task.id}" type="button">不緊急重要</button>
-      <button data-action="quadrant" data-quadrant="not-urgent-not-important" data-id="${task.id}" type="button">不緊急不重要</button>
+      <button data-action="quadrant" data-quadrant="urgent-important" data-id="${task.id}" title="緊急重要" type="button">緊重</button>
+      <button data-action="quadrant" data-quadrant="urgent-not-important" data-id="${task.id}" title="緊急不重要" type="button">緊不重</button>
+      <button data-action="quadrant" data-quadrant="not-urgent-important" data-id="${task.id}" title="不緊急重要" type="button">不緊重</button>
+      <button data-action="quadrant" data-quadrant="not-urgent-not-important" data-id="${task.id}" title="不緊急不重要" type="button">不緊不重</button>
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
       <button data-action="check-in" data-outcome="complete" data-id="${task.id}" type="button">完成</button>
     </div>
