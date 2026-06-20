@@ -42,7 +42,7 @@ const DASHBOARD_SECTION_META = {
   reminders: { icon: "♧", label: "提醒" }
 };
 const DASHBOARD_SECTION_IDS = Object.keys(DASHBOARD_SECTION_META);
-const GANTT_QUADRANTS = new Set(["urgent-important", "urgent-not-important", "not-urgent-important"]);
+const GANTT_QUADRANTS = new Set(["urgent-important", "urgent-not-important"]);
 
 let draggedTaskId = null;
 let pointerDrag = null;
@@ -629,7 +629,7 @@ function renderGantt() {
           </article>`;
         })
         .join("")}`
-    : `<div class="drop-empty">暫時沒有可排程的工作段。只有緊急重要、緊急不重要、不緊急重要，且不是 2 分鐘完成的任務，才會進甘特圖。</div>`;
+    : `<div class="drop-empty">暫時沒有可排程的工作段。只有緊急重要、緊急不重要，且不是 2 分鐘完成的任務，才會進甘特圖。</div>`;
 }
 
 function isGanttCandidate(task) {
