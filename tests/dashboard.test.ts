@@ -69,7 +69,7 @@ describe("dashboard API", () => {
     const current = (await getResponse.json()) as { accountEmail: string; provider: string; oauthStatus: string };
     expect(current.accountEmail).toBe("kevin@region.mo");
     expect(current.provider).toBe("macos-calendar-bridge");
-    expect(current.oauthStatus).toBe("google_oauth_not_configured");
+    expect(current.oauthStatus).toBe("macos_calendar_permission_required");
 
     const putResponse = await fetch(`${baseUrl}/api/calendar-settings`, {
       method: "PUT",
@@ -85,6 +85,9 @@ describe("dashboard API", () => {
       body: JSON.stringify({ accountEmail: "not-an-email" })
     });
     expect(invalidResponse.status).toBe(400);
+
+    const openPrivacyResponse = await fetch(`${baseUrl}/api/calendar-settings/open-privacy`, { method: "POST" });
+    expect(openPrivacyResponse.status).toBe(200);
   });
 
   it("serves work capacity settings and replans after updates", async () => {

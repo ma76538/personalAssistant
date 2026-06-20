@@ -44,3 +44,5 @@
 .matrix-list{gap:6px}
 .matrix-status-actions{min-width:250px}
 .matrix-status-actions button{height:27px;padding:0 7px}
+.calendar-settings-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.calendar-settings-actions button{height:34px;padding:0 12px;border-color:rgba(77,167,170,.36);background:rgba(77,167,170,.12);color:#287174;font-weight:800}

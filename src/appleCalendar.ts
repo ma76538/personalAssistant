@@ -55,7 +55,7 @@ func output(_ payload: [String: Any]) {
 }
 
 if !granted {
-  output(["connected": false, "events": [], "error": accessError?.localizedDescription ?? "macOS Calendar access was not granted. Enable Calendar access for the app/terminal running PersonalAssistant."])
+  output(["connected": false, "events": [], "error": accessError?.localizedDescription ?? "macOS Calendar 未授權。請在 Privacy & Security > Calendars 允許執行 PersonalAssistant 的 App 或 Terminal 存取 Calendar，授權後回 Dashboard 按刷新。"])
   exit(0)
 }
 

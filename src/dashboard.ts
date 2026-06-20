@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
 import mime from "mime";
 import { z } from "zod";
 import { AssistantRepository } from "./db.js";
@@ -216,6 +217,12 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         sendJson(response, calendarSettings(repo));
         return;
       }
+
+      if (url.pathname === "/api/calendar-settings/open-privacy" && request.method === "POST") {
+        openCalendarPrivacySettings();
+        sendJson(response, { ok: true });
+        return;
+      }
     } catch (error) {
       const status = error instanceof z.ZodError ? 400 : 500;
       sendJson(response, { error: error instanceof Error ? error.message : "Unknown error" }, status);
@@ -418,10 +425,15 @@ function calendarSettings(repo: AssistantRepository): { accountEmail: string; pr
   return {
     accountEmail: getCalendarAccountEmail(repo),
     provider: "macos-calendar-bridge",
-    oauthStatus: "google_oauth_not_configured",
+    oauthStatus: "macos_calendar_permission_required",
     note:
-      "目前用 macOS Calendar 作為 Google Workspace 橋接：先在 macOS Internet Accounts 加入 kevin@region.mo 並啟用 Calendar，再在 Privacy & Security > Calendars 授權執行 PersonalAssistant 的 App/Terminal。若要不經 macOS 直連 Google Calendar，需要另設 Google OAuth client。"
+      "目前用 macOS Calendar 作為 Google Workspace 橋接：先在 macOS Internet Accounts 加入 kevin@region.mo 並啟用 Calendar，再在 Privacy & Security > Calendars 授權執行 PersonalAssistant 的 App/Terminal。授權後按「刷新」。若要不經 macOS 直連 Google Calendar，需要另設 Google OAuth client。"
   };
+}
+
+function openCalendarPrivacySettings(): void {
+  if (process.env.NODE_ENV === "test" || process.env.VITEST) return;
+  execFile("open", ["x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"], () => undefined);
 }
 
 function calendarEventsToBusyBlocks(events: AppleCalendarEvent[]): BusyBlock[] {
