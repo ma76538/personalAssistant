@@ -117,13 +117,15 @@ export async function listCalendarEvents(repo: AssistantRepository, startIso: st
         repo.saveSetting("google_calendar_access_token", token.accessToken);
         repo.saveSetting("google_calendar_token_expiry", token.tokenExpiry);
       }
-      const events = await listGoogleCalendarEvents(config, startIso, endIso, token.accessToken);
+      const calendarData = await listGoogleCalendarEvents(config, startIso, endIso, token.accessToken);
       return {
         accountEmail: config.accountEmail,
         provider: "google-calendar",
         connected: true,
         oauthStatus: "connected",
-        events
+        events: calendarData.events,
+        matchedCalendars: calendarData.calendars.map((calendar) => calendar.title),
+        matchMode: "google_selected_calendars"
       };
     } catch (error) {
       return {

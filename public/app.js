@@ -722,8 +722,9 @@ function renderCalendar() {
   const monthTasks = state.summary?.month || [];
   const calendar = state.summary?.calendar || { accountEmail: "kevin@region.mo", connected: false, events: [] };
   const calendarMode = "｜Google Calendar";
+  const calendarNames = (calendar.matchedCalendars || []).slice(0, 3).join("、");
   calendarStatusEl.textContent = calendar.connected
-    ? `已連結 ${calendar.accountEmail}${calendarMode}｜${(calendar.events || []).length} 個日曆項目`
+    ? `已連結 ${calendar.accountEmail}${calendarMode}｜${(calendar.events || []).length} 個日曆項目${calendarNames ? `｜${calendarNames}` : ""}`
     : `未同步 ${calendar.accountEmail}${calendar.error ? `：${calendar.error}` : "：請連接 Google Calendar"}`;
   calendarBoardEl.innerHTML = days
     .map((day) => {
@@ -757,7 +758,7 @@ function renderCalendarSettings() {
     const secret = settings.hasGoogleClientSecret ? "Client Secret 已儲存。" : "尚未儲存 Client Secret。";
     const token = settings.hasRefreshToken ? "Google refresh token 已儲存。" : "尚未完成 Google 授權。";
     const redirect = settings.redirectUri ? ` Redirect URI：${settings.redirectUri}` : "";
-    note.textContent = `${settings.note || "日曆設定已載入。"} ${secret} ${token}${redirect}`;
+    note.textContent = `${settings.note || "日曆設定已載入。"} ${secret} ${token}${redirect} 授權成功後會直接讀取 Google 已勾選的所有日曆，不會讀 macOS Calendar。`;
   }
 }
 

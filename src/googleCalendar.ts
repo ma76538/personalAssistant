@@ -17,6 +17,13 @@ export type GoogleCalendarEvent = {
   sourceTitle: string;
 };
 
+export type GoogleCalendarListEntry = {
+  id: string;
+  title: string;
+  primary: boolean;
+  selected: boolean;
+};
+
 type TokenResponse = {
   access_token?: string;
   refresh_token?: string;
@@ -40,9 +47,23 @@ type GoogleEventResponse = {
   error?: { message?: string };
 };
 
+type GoogleCalendarListItem = {
+  id?: string;
+  summary?: string;
+  primary?: boolean;
+  selected?: boolean;
+  hidden?: boolean;
+};
+
+type GoogleCalendarListResponse = {
+  items?: GoogleCalendarListItem[];
+  error?: { message?: string };
+};
+
 export const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_CALENDAR_API_URL = "https://www.googleapis.com/calendar/v3";
 
 export function hasGoogleCredentials(config: GoogleCalendarConfig): boolean {
   return Boolean(config.clientId && config.clientSecret);
@@ -121,6 +142,45 @@ export async function listGoogleCalendarEvents(
   startIso: string,
   endIso: string,
   accessToken: string
+): Promise<{ events: GoogleCalendarEvent[]; calendars: GoogleCalendarListEntry[] }> {
+  const calendars = await listGoogleCalendars(accessToken);
+  const readableCalendars = calendars.length
+    ? calendars
+    : [{ id: "primary", title: config.accountEmail, primary: true, selected: true }];
+  const nestedEvents = await Promise.all(readableCalendars.map((calendar) => listEventsForCalendar(calendar, startIso, endIso, accessToken)));
+  return {
+    calendars: readableCalendars,
+    events: nestedEvents.flat().sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+  };
+}
+
+async function listGoogleCalendars(accessToken: string): Promise<GoogleCalendarListEntry[]> {
+  const params = new URLSearchParams({
+    maxResults: "250",
+    minAccessRole: "reader"
+  });
+  const response = await fetch(`${GOOGLE_CALENDAR_API_URL}/users/me/calendarList?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  const payload = (await response.json()) as GoogleCalendarListResponse;
+  if (!response.ok) {
+    throw new Error(payload.error?.message || `Google Calendar list API failed with ${response.status}`);
+  }
+  return (payload.items || [])
+    .filter((calendar) => calendar.id && !calendar.hidden && (calendar.primary || calendar.selected))
+    .map((calendar) => ({
+      id: calendar.id!,
+      title: calendar.summary || calendar.id!,
+      primary: Boolean(calendar.primary),
+      selected: calendar.selected !== false
+    }));
+}
+
+async function listEventsForCalendar(
+  calendar: GoogleCalendarListEntry,
+  startIso: string,
+  endIso: string,
+  accessToken: string
 ): Promise<GoogleCalendarEvent[]> {
   const params = new URLSearchParams({
     timeMin: startIso,
@@ -129,16 +189,15 @@ export async function listGoogleCalendarEvents(
     orderBy: "startTime",
     maxResults: "250"
   });
-  const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`, {
+  const response = await fetch(`${GOOGLE_CALENDAR_API_URL}/calendars/${encodeURIComponent(calendar.id)}/events?${params.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   const payload = (await response.json()) as GoogleEventResponse;
   if (!response.ok) {
-    throw new Error(payload.error?.message || `Google Calendar API failed with ${response.status}`);
+    throw new Error(payload.error?.message || `Google Calendar events API failed with ${response.status}`);
   }
-  const calendarTitle = payload.summary || config.accountEmail;
   return (payload.items || [])
-    .map((event) => normalizeGoogleEvent(event, calendarTitle))
+    .map((event) => normalizeGoogleEvent(event, calendar))
     .filter((event): event is GoogleCalendarEvent => Boolean(event));
 }
 
@@ -155,7 +214,7 @@ async function postGoogleToken(params: Record<string, string>): Promise<TokenRes
   return payload;
 }
 
-function normalizeGoogleEvent(event: GoogleEvent, calendarTitle: string): GoogleCalendarEvent | null {
+function normalizeGoogleEvent(event: GoogleEvent, calendar: GoogleCalendarListEntry): GoogleCalendarEvent | null {
   const allDay = Boolean(event.start?.date && event.end?.date);
   const start = event.start?.dateTime || dateOnlyToIso(event.start?.date);
   const end = event.end?.dateTime || dateOnlyToIso(event.end?.date);
@@ -163,12 +222,12 @@ function normalizeGoogleEvent(event: GoogleEvent, calendarTitle: string): Google
     return null;
   }
   return {
-    id: event.id,
+    id: `${calendar.id}:${event.id}`,
     title: event.summary || "(No title)",
     start,
     end,
     allDay,
-    calendarTitle,
+    calendarTitle: calendar.title,
     sourceTitle: "Google Calendar"
   };
 }
