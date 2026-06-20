@@ -417,9 +417,10 @@ function getCalendarAccountEmail(repo: AssistantRepository): string {
 function calendarSettings(repo: AssistantRepository): { accountEmail: string; provider: string; oauthStatus: string; note: string } {
   return {
     accountEmail: getCalendarAccountEmail(repo),
-    provider: "apple-calendar",
-    oauthStatus: "not_required_for_apple_calendar",
-    note: "目前用 macOS Calendar 權限讀取本機 Apple Calendar；若之後改接 Google/Microsoft Calendar，才需要 OAuth client 設定。"
+    provider: "macos-calendar-bridge",
+    oauthStatus: "google_oauth_not_configured",
+    note:
+      "目前用 macOS Calendar 作為 Google Workspace 橋接：先在 macOS Internet Accounts 加入 kevin@region.mo 並啟用 Calendar，再在 Privacy & Security > Calendars 授權執行 PersonalAssistant 的 App/Terminal。若要不經 macOS 直連 Google Calendar，需要另設 Google OAuth client。"
   };
 }
 

@@ -14,6 +14,8 @@ export type AppleCalendarResult = {
   accountEmail: string;
   connected: boolean;
   events: AppleCalendarEvent[];
+  matchMode?: string;
+  matchedCalendars?: string[];
   error?: string;
 };
 
@@ -53,7 +55,7 @@ func output(_ payload: [String: Any]) {
 }
 
 if !granted {
-  output(["connected": false, "events": [], "error": accessError?.localizedDescription ?? "Calendar access was not granted."])
+  output(["connected": false, "events": [], "error": accessError?.localizedDescription ?? "macOS Calendar access was not granted. Enable Calendar access for the app/terminal running PersonalAssistant."])
   exit(0)
 }
 
@@ -62,13 +64,21 @@ guard let start = formatter.date(from: startRaw), let end = formatter.date(from:
   exit(0)
 }
 
-let calendars = store.calendars(for: .event).filter { calendar in
+let allCalendars = store.calendars(for: .event)
+let directCalendars = allCalendars.filter { calendar in
   calendar.source.title.localizedCaseInsensitiveContains(accountEmail)
     || calendar.title.localizedCaseInsensitiveContains(accountEmail)
 }
+let googleCalendars = allCalendars.filter { calendar in
+  calendar.source.title.localizedCaseInsensitiveContains("google")
+    || calendar.source.title.localizedCaseInsensitiveContains("gmail")
+}
+let calendars = directCalendars.isEmpty ? googleCalendars : directCalendars
+let matchMode = directCalendars.isEmpty ? "google-source-fallback" : "email"
 
 if calendars.isEmpty {
-  output(["connected": false, "events": [], "error": "No calendar found for " + accountEmail])
+  let available = allCalendars.map { $0.source.title + " / " + $0.title }.joined(separator: ", ")
+  output(["connected": false, "events": [], "error": "No calendar found for " + accountEmail + ". Available calendars: " + available])
   exit(0)
 }
 
@@ -87,7 +97,12 @@ let events = store.events(matching: predicate)
     ]
   }
 
-output(["connected": true, "events": events])
+output([
+  "connected": true,
+  "events": events,
+  "matchMode": matchMode,
+  "matchedCalendars": calendars.map { $0.source.title + " / " + $0.title }
+])
 `;
 
 export function listAppleCalendarEvents(accountEmail: string, startIso: string, endIso: string): AppleCalendarResult {
@@ -101,7 +116,14 @@ export function listAppleCalendarEvents(accountEmail: string, startIso: string, 
       maxBuffer: 1024 * 1024
     });
     const result = JSON.parse(raw.trim() || "{\"connected\":false,\"events\":[]}") as Omit<AppleCalendarResult, "accountEmail">;
-    return { accountEmail, connected: Boolean(result.connected), events: result.events ?? [], error: result.error };
+    return {
+      accountEmail,
+      connected: Boolean(result.connected),
+      events: result.events ?? [],
+      matchMode: result.matchMode,
+      matchedCalendars: result.matchedCalendars,
+      error: result.error
+    };
   } catch (error) {
     return {
       accountEmail,

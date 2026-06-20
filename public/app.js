@@ -451,15 +451,23 @@ function renderGantt() {
           const end = new Date(item.scheduledEnd);
           const left = ganttLeft(start);
           const width = Math.max(6, ((end - start) / 60000 / (12 * 60)) * 100);
-          const title = item.type === "busy" ? item.title : item.task?.title || `#${item.taskId}`;
+          const task = item.task;
+          const title = item.type === "busy" ? item.title : task?.title || `#${item.taskId}`;
           const meta =
             item.type === "busy"
               ? "Calendar"
               : item.segmentCount > 1
                 ? `第 ${item.segmentIndex}/${item.segmentCount} 段`
                 : "任務";
-          return `<article class="gantt-row ${item.type}">
-            <div class="gantt-label"><strong>${esc(title)}</strong><small>${shortMonthDay(item.scheduledStart)} ${timeRange(item.scheduledStart, item.scheduledEnd)}｜${meta}</small></div>
+          const badges =
+            item.type === "busy"
+              ? `<span class="gantt-time">${shortMonthDay(item.scheduledStart)} ${timeRange(item.scheduledStart, item.scheduledEnd)}</span><span class="gantt-calendar-badge">日曆</span>`
+              : `<span class="gantt-time">${shortMonthDay(item.scheduledStart)} ${timeRange(item.scheduledStart, item.scheduledEnd)}</span>
+                <span class="gantt-importance priority-${task?.priority ?? 3}"><i></i>重要 ${task?.valueScore ?? 3}</span>
+                <span class="gantt-priority">優先 ${task?.priority ?? 3}</span>
+                ${task?.quadrant ? `<span>${quadrantLabel(task.quadrant)}</span>` : ""}`;
+          return `<article class="gantt-row ${item.type} priority-${task?.priority ?? 3}">
+            <div class="gantt-label"><strong>${esc(title)}</strong><small>${meta}</small><div class="gantt-badges">${badges}</div></div>
             <div class="gantt-track"><span style="left:${left}%;width:${width}%"></span></div>
           </article>`;
         })
@@ -514,8 +522,9 @@ function renderCalendar() {
   const days = calendarMonthDays(new Date());
   const monthTasks = state.summary?.month || [];
   const calendar = state.summary?.calendar || { accountEmail: "kevin@region.mo", connected: false, events: [] };
+  const calendarMode = calendar.matchMode === "google-source-fallback" ? "｜Google source fallback" : "";
   calendarStatusEl.textContent = calendar.connected
-    ? `已連結 ${calendar.accountEmail}`
+    ? `已連結 ${calendar.accountEmail}${calendarMode}`
     : `未連結 ${calendar.accountEmail}${calendar.error ? `：${calendar.error}` : ""}`;
   calendarBoardEl.innerHTML = days
     .map((day) => {

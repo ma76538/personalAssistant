@@ -66,9 +66,10 @@ describe("dashboard API", () => {
 
     const getResponse = await fetch(`${baseUrl}/api/calendar-settings`);
     expect(getResponse.status).toBe(200);
-    const current = (await getResponse.json()) as { accountEmail: string; provider: string };
+    const current = (await getResponse.json()) as { accountEmail: string; provider: string; oauthStatus: string };
     expect(current.accountEmail).toBe("kevin@region.mo");
-    expect(current.provider).toBe("apple-calendar");
+    expect(current.provider).toBe("macos-calendar-bridge");
+    expect(current.oauthStatus).toBe("google_oauth_not_configured");
 
     const putResponse = await fetch(`${baseUrl}/api/calendar-settings`, {
       method: "PUT",
