@@ -23,8 +23,11 @@ const reminderSettingsStatusEl = $("reminder-settings-status");
 const calendarSettingsStatusEl = $("calendar-settings-status");
 const workCapacityStatusEl = $("work-capacity-status");
 const pendingReviewStatusEl = $("pending-review-status");
+const appShellEl = document.querySelector(".app-shell");
 const sideNavEl = document.querySelector(".side-nav");
+const sidebarToggleEl = $("sidebar-toggle");
 const workspaceEl = document.querySelector(".workspace");
+const SIDEBAR_COLLAPSED_KEY = "personalAssistant.sidebarCollapsed.v1";
 const DASHBOARD_SECTION_ORDER_KEY = "personalAssistant.dashboardSectionOrder.v1";
 const DASHBOARD_SECTION_META = {
   "focus-panel": { icon: "◎", label: "今日先做" },
@@ -61,6 +64,7 @@ $("run-pending-review")?.addEventListener("click", runPendingReview);
 reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
 reminderSettingsFormEl.addEventListener("change", scheduleReminderSettingsSave);
 $("reset-reminder-settings").addEventListener("click", resetReminderSettings);
+setupSidebarToggle();
 setupSectionDragging();
 ["earliestStart", "deadline"].forEach((id) => {
   const input = $(id);
@@ -72,6 +76,24 @@ sideNavEl?.addEventListener("click", (event) => {
   if (!link || !sideNavEl.contains(link)) return;
   setActiveSideNav(link.hash.slice(1));
 });
+
+function setupSidebarToggle() {
+  const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+  setSidebarCollapsed(collapsed);
+  sidebarToggleEl?.addEventListener("click", () => {
+    const next = !appShellEl?.classList.contains("sidebar-collapsed");
+    setSidebarCollapsed(next, true);
+  });
+}
+
+function setSidebarCollapsed(collapsed, persist = false) {
+  appShellEl?.classList.toggle("sidebar-collapsed", collapsed);
+  sidebarToggleEl?.setAttribute("aria-expanded", String(!collapsed));
+  sidebarToggleEl?.setAttribute("aria-label", collapsed ? "展開左側選單" : "收合左側選單");
+  if (persist) {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
+  }
+}
 
 matrixEl.addEventListener("click", handleTaskButtonClick);
 matrixEl.addEventListener("dragstart", handleDragStart);

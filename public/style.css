@@ -76,3 +76,17 @@
 .gantt-row.unscheduled{background:rgba(255,251,244,.82);border-style:dashed}
 .gantt-track.gantt-unscheduled{display:flex;align-items:center;min-height:30px;height:auto;padding:0 10px;border:1px dashed rgba(232,155,88,.4);background:rgba(255,255,255,.58);overflow:visible}
 .gantt-track.gantt-unscheduled span{position:static!important;display:inline-flex;align-items:center;width:auto!important;height:auto!important;min-height:0!important;background:transparent!important;box-shadow:none!important;color:#a76024;font-size:12px;font-weight:800}
+.app-shell{grid-template-columns:260px minmax(0,1fr);transition:grid-template-columns .18s ease}
+.sidebar{overflow:hidden}
+.brand-mark{display:grid;grid-template-columns:36px 38px minmax(0,1fr);align-items:center;gap:10px}
+.brand-mark strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15}
+.menu-icon{display:grid;place-items:center;width:36px;height:36px;padding:0;border:0;border-radius:8px;background:transparent;color:#4a607b;font-size:22px;line-height:1}
+.menu-icon:hover{background:rgba(77,167,170,.12);color:#287174}
+.app-shell.sidebar-collapsed{grid-template-columns:76px minmax(0,1fr)}
+.app-shell.sidebar-collapsed .sidebar{padding:20px 12px}
+.app-shell.sidebar-collapsed .brand-mark{grid-template-columns:36px;justify-content:center;margin-bottom:24px}
+.app-shell.sidebar-collapsed .calendar-icon,.app-shell.sidebar-collapsed .brand-mark strong{display:none}
+.app-shell.sidebar-collapsed .side-nav{justify-items:center}
+.app-shell.sidebar-collapsed .side-nav a{justify-content:center;width:50px;padding:0;font-size:0;gap:0}
+.app-shell.sidebar-collapsed .side-nav a span{width:auto;font-size:18px}
+@media(max-width:1100px){.app-shell,.app-shell.sidebar-collapsed{grid-template-columns:1fr}.app-shell.sidebar-collapsed .sidebar{height:auto}.app-shell.sidebar-collapsed .side-nav{display:none}}
