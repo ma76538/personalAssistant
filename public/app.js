@@ -38,8 +38,8 @@ $("cancel-edit").addEventListener("click", closeEditor);
 drawerBackdropEl.addEventListener("click", closeEditor);
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
-$("save-work-capacity").addEventListener("click", saveWorkCapacity);
-$("run-pending-review").addEventListener("click", runPendingReview);
+$("save-work-capacity")?.addEventListener("click", saveWorkCapacity);
+$("run-pending-review")?.addEventListener("click", runPendingReview);
 reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
 reminderSettingsFormEl.addEventListener("change", scheduleReminderSettingsSave);
 $("reset-reminder-settings").addEventListener("click", resetReminderSettings);
@@ -300,11 +300,13 @@ function renderPendingBucket() {
 function pendingTask(task) {
   return `<article class="pending-task priority-${task.priority}" data-id="${task.id}">
     <span class="priority-bar"></span>
-    <div class="pending-task-main">
-      <strong>${esc(task.title)}</strong>
-      <small>${task.deadline ? `Due ${shortMonthDay(task.deadline)}` : "未決定時間，不進排程"}</small>
+    <div class="pending-task-content">
+      <div class="pending-task-main">
+        <strong>${esc(task.title)}</strong>
+        <small>${task.deadline ? `Due ${shortMonthDay(task.deadline)}` : "未決定時間，不進排程"}</small>
+      </div>
+      ${taskMeta(task)}
     </div>
-    ${taskMeta(task)}
     <div class="pending-actions">
       <button data-action="quadrant" data-quadrant="urgent-important" data-id="${task.id}" type="button">緊急重要</button>
       <button data-action="quadrant" data-quadrant="urgent-not-important" data-id="${task.id}" type="button">緊急不重要</button>
@@ -548,7 +550,9 @@ function renderWorkSettings() {
   if (!settings) return;
   setValue("work-capacity-hours", settings.dailyWorkCapacityHours);
   setChecked("secretary-mvp-mode", settings.secretaryMvpMode);
-  workCapacityStatusEl.textContent = `每日容量 ${settings.dailyWorkCapacityHours} 小時｜${settings.secretaryMvpMode ? "電子秘書 MVP 最高價值" : "一般排序"}`;
+  if (workCapacityStatusEl) {
+    workCapacityStatusEl.textContent = `每日容量 ${settings.dailyWorkCapacityHours} 小時｜${settings.secretaryMvpMode ? "電子秘書 MVP 最高價值" : "一般排序"}`;
+  }
 }
 
 async function saveWorkCapacity() {
@@ -576,11 +580,13 @@ async function runPendingReview() {
       body: JSON.stringify({ limit: 8 })
     });
     const items = response.items || [];
-    pendingReviewStatusEl.innerHTML = items.length
-      ? `<strong>待定整理建議</strong>${items.map((item) => `<p>#${item.task.id} ${esc(item.task.title)} → ${quadrantLabel(item.suggestion.recommendedQuadrant)}｜價值 ${item.suggestion.valueScore}｜${esc(item.suggestion.reason)}</p>`).join("")}`
-      : "<p>目前沒有待定任務需要整理。</p>";
+    setReviewStatus(
+      items.length
+        ? `<strong>待定整理建議</strong>${items.map((item) => `<p>#${item.task.id} ${esc(item.task.title)} → ${quadrantLabel(item.suggestion.recommendedQuadrant)}｜價值 ${item.suggestion.valueScore}｜${esc(item.suggestion.reason)}</p>`).join("")}`
+        : "<p>目前沒有待定任務需要整理。</p>"
+    );
   } catch (error) {
-    pendingReviewStatusEl.textContent = error instanceof Error ? `整理失敗：${error.message}` : "整理失敗";
+    setReviewStatus(error instanceof Error ? `整理失敗：${error.message}` : "整理失敗", false);
   }
 }
 
@@ -591,7 +597,7 @@ async function checkInTask(id, outcome) {
     body: JSON.stringify({ outcome, note })
   });
   if (response.nextActionPreview) {
-    pendingReviewStatusEl.innerHTML = `<strong>下一步建議</strong><p>${esc(response.nextActionPreview.title)}｜${response.nextActionPreview.durationMinutes} 分鐘</p><p>${esc(response.nextActionPreview.reason)}</p>`;
+    setReviewStatus(`<strong>下一步建議</strong><p>${esc(response.nextActionPreview.title)}｜${response.nextActionPreview.durationMinutes} 分鐘</p><p>${esc(response.nextActionPreview.reason)}</p>`);
   }
 }
 
@@ -601,7 +607,16 @@ async function previewNextAction(id) {
     method: "POST",
     body: JSON.stringify({ progressNote: note })
   });
-  pendingReviewStatusEl.innerHTML = `<strong>下一步建議</strong><p>${esc(response.action.title)}｜${response.action.durationMinutes} 分鐘</p><p>${esc(response.action.reason)}</p>`;
+  setReviewStatus(`<strong>下一步建議</strong><p>${esc(response.action.title)}｜${response.action.durationMinutes} 分鐘</p><p>${esc(response.action.reason)}</p>`);
+}
+
+function setReviewStatus(content, asHtml = true) {
+  if (pendingReviewStatusEl) {
+    if (asHtml) pendingReviewStatusEl.innerHTML = content;
+    else pendingReviewStatusEl.textContent = content;
+    return;
+  }
+  lastUpdatedEl.textContent = asHtml ? content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() : content;
 }
 
 async function saveCalendarSettings() {
