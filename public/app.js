@@ -1,4 +1,4 @@
-const state = { tasks: [], summary: null, reminderPolicy: null, calendarSettings: null, workSettings: null, search: "" };
+const state = { tasks: [], summary: null, calendarSettings: null, workSettings: null, search: "" };
 const $ = (id) => document.getElementById(id);
 
 const matrixEl = $("matrix");
@@ -38,8 +38,7 @@ const DASHBOARD_SECTION_META = {
   gantt: { icon: "▤", label: "甘特圖" },
   calendar: { icon: "◴", label: "日曆" },
   "calendar-settings": { icon: "⚙", label: "日曆設定" },
-  "completed-bin": { icon: "☑", label: "完成箱" },
-  reminders: { icon: "♧", label: "提醒" }
+  "completed-bin": { icon: "☑", label: "完成箱" }
 };
 const DASHBOARD_SECTION_IDS = Object.keys(DASHBOARD_SECTION_META);
 const GANTT_QUADRANTS = new Set(["urgent-important", "urgent-not-important"]);
@@ -62,9 +61,9 @@ $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
 $("connect-google-calendar")?.addEventListener("click", connectGoogleCalendar);
 $("save-work-capacity")?.addEventListener("click", saveWorkCapacity);
 $("run-pending-review")?.addEventListener("click", runPendingReview);
-reminderSettingsFormEl.addEventListener("input", scheduleReminderSettingsSave);
-reminderSettingsFormEl.addEventListener("change", scheduleReminderSettingsSave);
-$("reset-reminder-settings").addEventListener("click", resetReminderSettings);
+reminderSettingsFormEl?.addEventListener("input", scheduleReminderSettingsSave);
+reminderSettingsFormEl?.addEventListener("change", scheduleReminderSettingsSave);
+$("reset-reminder-settings")?.addEventListener("click", resetReminderSettings);
 setupSidebarToggle();
 setupSectionDragging();
 ["earliestStart", "deadline"].forEach((id) => {
@@ -401,16 +400,14 @@ async function handlePointerDragEnd(event) {
 }
 
 async function loadDashboard() {
-  const [summaryResponse, tasksResponse, reminderResponse, calendarSettingsResponse, workSettingsResponse] = await Promise.all([
+  const [summaryResponse, tasksResponse, calendarSettingsResponse, workSettingsResponse] = await Promise.all([
     fetch("/api/summary"),
     fetch("/api/tasks"),
-    fetch("/api/reminder-settings"),
     fetch("/api/calendar-settings"),
     fetch("/api/work-capacity")
   ]);
   state.summary = await summaryResponse.json();
   state.tasks = (await tasksResponse.json()).tasks;
-  state.reminderPolicy = (await reminderResponse.json()).policy;
   state.calendarSettings = await calendarSettingsResponse.json();
   state.workSettings = await workSettingsResponse.json();
   render();
@@ -425,7 +422,6 @@ function render() {
   renderCalendar();
   renderCompletedBin();
   renderFocusList();
-  renderReminderSettings();
   renderCalendarSettings();
   renderWorkSettings();
   lastUpdatedEl.textContent = `更新於 ${new Intl.DateTimeFormat("zh-Hant", {
