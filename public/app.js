@@ -578,7 +578,7 @@ function taskRow(task, rank) {
 function subtaskPanel(task) {
   const summary = task.subtaskSummary;
   if (!summary?.total) {
-    return `<div class="subtask-strip empty-subtasks"><span>未拆子項目</span><small>需要時才按「拆解」或「新增子項目」</small></div>`;
+    return "";
   }
   const next = summary.next;
   const stateText = summary.blocked ? `卡住 ${summary.blocked}` : summary.waiting ? `等待 ${summary.waiting}` : `未完成 ${summary.pending}`;
