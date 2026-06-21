@@ -318,6 +318,16 @@ export class AssistantRepository {
     return this.getSubtask(id)!;
   }
 
+  deleteSubtask(id: number): boolean {
+    const current = this.getSubtask(id);
+    if (!current) {
+      return false;
+    }
+    const result = this.db.prepare("DELETE FROM task_subtasks WHERE id = ?").run(id);
+    this.touchTask(current.taskId);
+    return result.changes > 0;
+  }
+
   completeNextSubtask(taskId: number): TaskSubtask | null {
     const next = this.nextOpenSubtask(taskId);
     return next ? this.updateSubtask(next.id, { status: "done" }) : null;

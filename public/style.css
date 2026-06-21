@@ -128,13 +128,15 @@ body.subtask-page-open{overflow:hidden}
 .subtask-page-progress strong{font-size:24px;color:#287174}
 .subtask-page-progress span{font-weight:800;color:#52627b}
 .subtask-list{display:grid;gap:8px;margin-bottom:14px}
-.subtask-check-row{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;padding:12px;border:1px solid rgba(125,145,174,.22);border-radius:8px;background:rgba(255,255,255,.78)}
+.subtask-check-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(125,145,174,.22);border-radius:8px;background:rgba(255,255,255,.78)}
+.subtask-check-row label{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;min-width:0}
 .subtask-check-row input{width:18px;height:18px;margin-top:2px;accent-color:#4da7aa}
 .subtask-check-row strong{display:block;color:#26334c}
 .subtask-check-row small{display:block;margin-top:4px;color:#7b889b}
+.subtask-check-row button{height:32px;padding:0 10px;border-color:rgba(232,113,120,.28);background:rgba(255,248,248,.78);color:#bd4d55;font-weight:800}
 .subtask-check-row.done{opacity:.68}
 .subtask-check-row.done strong{text-decoration:line-through}
-.subtask-page-add{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;margin-bottom:12px}
+.subtask-page-add{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;margin-bottom:12px}
 .subtask-page-add label{display:grid;gap:6px;color:#324058;font-weight:800}
 .subtask-page-add input{min-height:40px;border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff;color:#26334c}
 .subtask-page-add button{height:40px;padding:0 12px;border-color:rgba(77,167,170,.36);background:rgba(77,167,170,.12);color:#287174;font-weight:800}

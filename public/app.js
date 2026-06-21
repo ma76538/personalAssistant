@@ -68,6 +68,7 @@ subtaskBackdropEl?.addEventListener("click", closeSubtaskPage);
 $("close-subtask-page")?.addEventListener("click", closeSubtaskPage);
 $("add-subtask-submit")?.addEventListener("click", addSubtaskFromPage);
 subtaskListEl?.addEventListener("change", handleSubtaskCheckboxChange);
+subtaskListEl?.addEventListener("click", handleSubtaskDeleteClick);
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
 $("connect-google-calendar")?.addEventListener("click", connectGoogleCalendar);
@@ -895,14 +896,16 @@ function renderSubtaskPage(summary) {
 
 function subtaskCheckRow(item) {
   const checked = item.status === "done" ? "checked" : "";
-  const completeText = item.completionDefinition ? `｜${esc(item.completionDefinition)}` : "";
-  return `<label class="subtask-check-row ${item.status === "done" ? "done" : ""}">
-    <input type="checkbox" data-subtask-id="${item.id}" ${checked} />
-    <span>
-      <strong>${esc(item.title)}</strong>
-      <small>${subtaskStatusLabel(item.status)}${completeText}</small>
-    </span>
-  </label>`;
+  return `<article class="subtask-check-row ${item.status === "done" ? "done" : ""}">
+    <label>
+      <input type="checkbox" data-subtask-id="${item.id}" ${checked} />
+      <span>
+        <strong>${esc(item.title)}</strong>
+        <small>${subtaskStatusLabel(item.status)}</small>
+      </span>
+    </label>
+    <button data-action="delete-subtask" data-subtask-id="${item.id}" type="button">刪除</button>
+  </article>`;
 }
 
 function subtaskStatusLabel(status) {
@@ -918,7 +921,6 @@ function subtaskStatusLabel(status) {
 async function addSubtaskFromPage() {
   if (!subtaskPageTask) return;
   const titleInput = $("subtask-new-title");
-  const definitionInput = $("subtask-new-definition");
   const title = titleInput?.value.trim();
   if (!title) {
     titleInput?.focus();
@@ -926,13 +928,9 @@ async function addSubtaskFromPage() {
   }
   await requestJson(`/api/tasks/${subtaskPageTask.id}/subtasks`, {
     method: "POST",
-    body: JSON.stringify({
-      title,
-      completionDefinition: definitionInput?.value.trim() || null
-    })
+    body: JSON.stringify({ title })
   });
   titleInput.value = "";
-  if (definitionInput) definitionInput.value = "";
   await refreshSubtaskPage();
   await loadDashboard();
 }
@@ -945,6 +943,14 @@ async function handleSubtaskCheckboxChange(event) {
     method: "PATCH",
     body: JSON.stringify({ status: input.checked ? "done" : "pending" })
   });
+  await refreshSubtaskPage();
+  await loadDashboard();
+}
+
+async function handleSubtaskDeleteClick(event) {
+  const button = event.target.closest("button");
+  if (!button || button.dataset.action !== "delete-subtask" || !button.dataset.subtaskId) return;
+  await requestJson(`/api/subtasks/${Number(button.dataset.subtaskId)}`, { method: "DELETE" });
   await refreshSubtaskPage();
   await loadDashboard();
 }

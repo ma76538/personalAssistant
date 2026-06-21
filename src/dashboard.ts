@@ -161,6 +161,18 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         return;
       }
 
+      if (subtaskMatch && request.method === "DELETE") {
+        const subtaskId = Number(subtaskMatch[1]);
+        const current = repo.getSubtask(subtaskId);
+        if (!current) {
+          sendJson(response, { error: "Subtask not found" }, 404);
+          return;
+        }
+        repo.deleteSubtask(subtaskId);
+        sendJson(response, { deleted: true, summary: repo.subtaskSummary(current.taskId) });
+        return;
+      }
+
       const checkInMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/check-in$/);
       if (checkInMatch && request.method === "POST") {
         const taskId = Number(checkInMatch[1]);

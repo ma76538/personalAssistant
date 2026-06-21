@@ -264,7 +264,7 @@ describe("dashboard API", () => {
     const addResponse = await fetch(`${baseUrl}/api/tasks/${project.id}/subtasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "確認完成標準", completionDefinition: "知道交付給阿成的內容" })
+      body: JSON.stringify({ title: "確認完成標準" })
     });
     const added = (await addResponse.json()) as { subtask: { id: number } };
     expect(addResponse.status).toBe(201);
@@ -285,15 +285,20 @@ describe("dashboard API", () => {
     expect(repo.subtaskSummary(project.id).done).toBe(1);
     expect(repo.getTask(project.id)?.status).not.toBe("done");
 
-    await fetch(`${baseUrl}/api/tasks/${project.id}/subtasks`, {
+    const secondAddResponse = await fetch(`${baseUrl}/api/tasks/${project.id}/subtasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "提交給阿成" })
     });
+    const secondAdded = (await secondAddResponse.json()) as { subtask: { id: number } };
     const completeNextResponse = await fetch(`${baseUrl}/api/tasks/${project.id}/subtasks/complete-next`, { method: "POST" });
     expect(completeNextResponse.status).toBe(200);
     expect(repo.subtaskSummary(project.id).done).toBe(2);
     expect(repo.getTask(project.id)?.status).not.toBe("done");
+
+    const deleteResponse = await fetch(`${baseUrl}/api/subtasks/${secondAdded.subtask.id}`, { method: "DELETE" });
+    expect(deleteResponse.status).toBe(200);
+    expect(repo.subtaskSummary(project.id).total).toBe(1);
   });
 
   it("clears completed tasks", async () => {
