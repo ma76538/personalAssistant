@@ -16,6 +16,13 @@ const focusListEl = $("focus-list");
 const lastUpdatedEl = $("last-updated");
 const drawerEl = $("drawer");
 const drawerBackdropEl = $("drawer-backdrop");
+const subtaskBackdropEl = $("subtask-backdrop");
+const subtaskPageEl = $("subtask-page");
+const subtaskPageTitleEl = $("subtask-page-title");
+const subtaskPageMetaEl = $("subtask-page-meta");
+const subtaskPageProgressEl = $("subtask-page-progress");
+const subtaskListEl = $("subtask-list");
+const subtaskPreviewEl = $("subtask-preview");
 const taskFormEl = $("task-form");
 const drawerTitleEl = $("drawer-title");
 const reminderSettingsFormEl = $("reminder-settings-form");
@@ -50,12 +57,21 @@ let lastMovedTaskId = null;
 let lastDueWarningTaskId = null;
 let reminderSettingsSaveTimer = null;
 let editingTask = null;
+let subtaskPageTask = null;
+let subtaskPageSubtasks = [];
+let pendingSubtaskSuggestions = [];
 
 $("refresh").addEventListener("click", loadDashboard);
 $("new-task").addEventListener("click", () => openEditor());
 $("close-drawer").addEventListener("click", closeEditor);
 $("cancel-edit").addEventListener("click", closeEditor);
 drawerBackdropEl.addEventListener("click", closeEditor);
+subtaskBackdropEl?.addEventListener("click", closeSubtaskPage);
+$("close-subtask-page")?.addEventListener("click", closeSubtaskPage);
+$("add-subtask-submit")?.addEventListener("click", addSubtaskFromPage);
+$("subtask-decompose")?.addEventListener("click", previewSubtaskDecompositionForPage);
+subtaskListEl?.addEventListener("change", handleSubtaskCheckboxChange);
+subtaskPreviewEl?.addEventListener("click", handleSubtaskPreviewClick);
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
 $("connect-google-calendar")?.addEventListener("click", connectGoogleCalendar);
@@ -289,10 +305,10 @@ async function handleTaskButtonClick(event) {
   if (button.dataset.action === "status") await updateTaskStatus(id, button.dataset.status);
   if (button.dataset.action === "check-in") await checkInTask(id, button.dataset.outcome || "defer");
   if (button.dataset.action === "next-action") await previewNextAction(id);
-  if (button.dataset.action === "add-subtask") await addSubtask(task);
-  if (button.dataset.action === "decompose-subtasks") await previewSubtaskDecomposition(task);
-  if (button.dataset.action === "complete-next-subtask") await completeNextSubtask(task);
-  if (button.dataset.action === "stuck-next-subtask") await markNextSubtaskStuck(task);
+  if (button.dataset.action === "subtask-page") {
+    await openSubtaskPage(task);
+    return;
+  }
   await loadDashboard();
 }
 
@@ -565,9 +581,7 @@ function taskRow(task, rank) {
       <button class="${status === "in_progress" ? "active" : ""}" data-action="status" data-status="in_progress" data-id="${task.id}" type="button">進行中</button>
       <button data-action="check-in" data-outcome="complete" data-id="${task.id}" type="button">完成</button>
       <button data-action="check-in" data-outcome="stuck" data-id="${task.id}" type="button">卡住</button>
-      <button data-action="decompose-subtasks" data-id="${task.id}" type="button">拆解</button>
-      <button data-action="add-subtask" data-id="${task.id}" type="button">新增子項目</button>
-      ${task.subtaskSummary?.pending ? `<button data-action="complete-next-subtask" data-id="${task.id}" type="button">完成下一步</button><button data-action="stuck-next-subtask" data-id="${task.id}" type="button">下一步卡住</button>` : ""}
+      <button data-action="subtask-page" data-id="${task.id}" type="button">子頁面</button>
       ${task.isProject ? `<button data-action="next-action" data-id="${task.id}" type="button">下一步</button>` : ""}
       <button data-action="pending-bucket" data-id="${task.id}" type="button">放待定</button>
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
@@ -848,66 +862,142 @@ async function previewNextAction(id) {
   setReviewStatus(`<strong>下一步建議</strong><p>${esc(response.action.title)}｜${response.action.durationMinutes} 分鐘</p><p>${esc(response.action.reason)}</p>`);
 }
 
-async function addSubtask(task) {
-  const title = window.prompt(`新增「${task.title}」的子項目：`);
-  if (!title?.trim()) return;
-  const completionDefinition = window.prompt("這個子項目做到甚麼算完成？可留空。") || "";
-  await requestJson(`/api/tasks/${task.id}/subtasks`, {
-    method: "POST",
-    body: JSON.stringify({ title: title.trim(), completionDefinition: completionDefinition.trim() || null })
-  });
-  setReviewStatus(`已新增「${esc(task.title)}」的子項目：${esc(title.trim())}`, false);
+async function openSubtaskPage(task) {
+  subtaskPageTask = task;
+  pendingSubtaskSuggestions = [];
+  if (subtaskPreviewEl) subtaskPreviewEl.innerHTML = "";
+  if (subtaskBackdropEl) subtaskBackdropEl.hidden = false;
+  subtaskPageEl?.setAttribute("aria-hidden", "false");
+  document.body.classList.add("subtask-page-open");
+  await refreshSubtaskPage();
 }
 
-async function previewSubtaskDecomposition(task) {
+function closeSubtaskPage() {
+  subtaskPageTask = null;
+  subtaskPageSubtasks = [];
+  pendingSubtaskSuggestions = [];
+  if (subtaskBackdropEl) subtaskBackdropEl.hidden = true;
+  subtaskPageEl?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("subtask-page-open");
+  if (subtaskPreviewEl) subtaskPreviewEl.innerHTML = "";
+}
+
+async function refreshSubtaskPage() {
+  if (!subtaskPageTask) return;
+  const response = await requestJson(`/api/tasks/${subtaskPageTask.id}/subtasks`);
+  subtaskPageSubtasks = response.subtasks || [];
+  renderSubtaskPage(response.summary);
+}
+
+function renderSubtaskPage(summary) {
+  if (!subtaskPageTask) return;
+  const total = summary?.total ?? subtaskPageSubtasks.length;
+  const done = summary?.done ?? subtaskPageSubtasks.filter((item) => item.status === "done").length;
+  subtaskPageTitleEl.textContent = `#${subtaskPageTask.id} ${subtaskPageTask.title}`;
+  subtaskPageMetaEl.textContent = `${quadrantLabel(subtaskPageTask.quadrant)}｜${subtaskPageTask.deadline ? `Due ${shortMonthDay(subtaskPageTask.deadline)}` : "未設定 Due Date"}`;
+  subtaskPageProgressEl.innerHTML = `<strong>${done}/${total}</strong><span>${total ? "已完成子項目" : "尚未建立子項目"}</span>`;
+  subtaskListEl.innerHTML = subtaskPageSubtasks.length
+    ? subtaskPageSubtasks.map(subtaskCheckRow).join("")
+    : `<div class="drop-empty">這個任務暫時未有子項目。可手動新增，或先產生拆解建議。</div>`;
+}
+
+function subtaskCheckRow(item) {
+  const checked = item.status === "done" ? "checked" : "";
+  const completeText = item.completionDefinition ? `｜${esc(item.completionDefinition)}` : "";
+  return `<label class="subtask-check-row ${item.status === "done" ? "done" : ""}">
+    <input type="checkbox" data-subtask-id="${item.id}" ${checked} />
+    <span>
+      <strong>${esc(item.title)}</strong>
+      <small>${subtaskStatusLabel(item.status)}${completeText}</small>
+    </span>
+  </label>`;
+}
+
+function subtaskStatusLabel(status) {
+  return {
+    pending: "未完成",
+    in_progress: "進行中",
+    waiting: "等待",
+    blocked: "卡住",
+    done: "完成"
+  }[status] || "未完成";
+}
+
+async function addSubtaskFromPage() {
+  if (!subtaskPageTask) return;
+  const titleInput = $("subtask-new-title");
+  const definitionInput = $("subtask-new-definition");
+  const title = titleInput?.value.trim();
+  if (!title) {
+    titleInput?.focus();
+    return;
+  }
+  await requestJson(`/api/tasks/${subtaskPageTask.id}/subtasks`, {
+    method: "POST",
+    body: JSON.stringify({
+      title,
+      completionDefinition: definitionInput?.value.trim() || null
+    })
+  });
+  titleInput.value = "";
+  if (definitionInput) definitionInput.value = "";
+  await refreshSubtaskPage();
+  await loadDashboard();
+}
+
+async function handleSubtaskCheckboxChange(event) {
+  const input = event.target instanceof HTMLInputElement ? event.target : null;
+  if (!input?.dataset.subtaskId) return;
+  const subtaskId = Number(input.dataset.subtaskId);
+  await requestJson(`/api/subtasks/${subtaskId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: input.checked ? "done" : "pending" })
+  });
+  await refreshSubtaskPage();
+  await loadDashboard();
+}
+
+async function previewSubtaskDecompositionForPage() {
+  if (!subtaskPageTask) return;
   const note = window.prompt("補充完成標準、卡點或已知線索（可留空）。系統只會產生 preview，不會自動寫入。") || "";
-  const response = await requestJson(`/api/tasks/${task.id}/subtasks/decompose-preview`, {
+  const response = await requestJson(`/api/tasks/${subtaskPageTask.id}/subtasks/decompose-preview`, {
     method: "POST",
     body: JSON.stringify({ note })
   });
   const decomposition = response.decomposition;
-  if (!decomposition.requiresSubtasks || !decomposition.subtasks?.length) {
-    window.alert(`這件事暫時不建議拆子項目。\n\n原因：${decomposition.reason}\n\n完成定義：${decomposition.completionDefinition}`);
+  pendingSubtaskSuggestions = decomposition.subtasks || [];
+  if (!decomposition.requiresSubtasks || !pendingSubtaskSuggestions.length) {
+    subtaskPreviewEl.innerHTML = `<div class="subtask-preview-card"><strong>暫時不建議拆子項目</strong><p>${esc(decomposition.reason || "這件事看起來可作為單步任務處理。")}</p></div>`;
     return;
   }
-  const preview = decomposition.subtasks.map((item, index) => `${index + 1}. ${item.title}`).join("\n");
-  const ok = window.confirm(`拆解建議：\n${preview}\n\n完成定義：${decomposition.completionDefinition}\n\n是否將以上建議加入為子項目？`);
-  if (!ok) return;
-  for (const item of decomposition.subtasks) {
-    await requestJson(`/api/tasks/${task.id}/subtasks`, {
+  subtaskPreviewEl.innerHTML = `<div class="subtask-preview-card">
+    <strong>拆解建議</strong>
+    <p>${esc(decomposition.reason || "可拆成以下下一步。")}</p>
+    <ol>${pendingSubtaskSuggestions.map((item) => `<li>${esc(item.title)}</li>`).join("")}</ol>
+    ${decomposition.completionDefinition ? `<p>完成定義：${esc(decomposition.completionDefinition)}</p>` : ""}
+    <button data-action="add-preview-subtasks" type="button">加入以上子項目</button>
+  </div>`;
+}
+
+async function handleSubtaskPreviewClick(event) {
+  const button = event.target.closest("button");
+  if (!button || button.dataset.action !== "add-preview-subtasks" || !subtaskPageTask) return;
+  for (const item of pendingSubtaskSuggestions) {
+    await requestJson(`/api/tasks/${subtaskPageTask.id}/subtasks`, {
       method: "POST",
       body: JSON.stringify({
         title: item.title,
         status: item.status || "pending",
         followUpAt: item.followUpAt || null,
-        completionDefinition: item.completionDefinition || decomposition.completionDefinition,
+        completionDefinition: item.completionDefinition || null,
         note: item.note || null
       })
     });
   }
-  setReviewStatus(`<strong>已加入子項目</strong><p>${esc(decomposition.reason)}</p>${decomposition.experienceRule ? `<p>${esc(decomposition.experienceRule)}</p>` : ""}`);
-}
-
-async function completeNextSubtask(task) {
-  const response = await requestJson(`/api/tasks/${task.id}/subtasks/complete-next`, { method: "POST" });
-  if (!response.subtask) {
-    window.alert("這個任務沒有未完成子項目。請自行判斷母任務是否完成。");
-    return;
-  }
-  setReviewStatus(`已完成下一步：${response.subtask.title}。母任務未自動完成。`, false);
-}
-
-async function markNextSubtaskStuck(task) {
-  const note = window.prompt("下一步卡在哪？") || "";
-  const response = await requestJson(`/api/tasks/${task.id}/subtasks/stuck-next`, {
-    method: "POST",
-    body: JSON.stringify({ note })
-  });
-  if (!response.subtask) {
-    window.alert("這個任務沒有可標記卡住的未完成子項目。");
-    return;
-  }
-  setReviewStatus(`已標記下一步卡住：${response.subtask.title}`, false);
+  pendingSubtaskSuggestions = [];
+  subtaskPreviewEl.innerHTML = "";
+  await refreshSubtaskPage();
+  await loadDashboard();
 }
 
 function setReviewStatus(content, asHtml = true) {

@@ -118,3 +118,28 @@
 .subtask-strip.has-blocked{border-color:rgba(232,113,120,.32);background:rgba(255,248,248,.72)}
 .subtask-strip.has-blocked span{color:#bd4d55}
 @media(max-width:900px){.subtask-strip{grid-template-columns:1fr}.subtask-strip strong,.subtask-strip small{white-space:normal}}
+.subtask-page{position:fixed;top:0;right:0;width:min(560px,100vw);height:100vh;padding:22px;background:#fbfcff;border-left:1px solid var(--line);box-shadow:var(--shadow);transform:translateX(105%);transition:transform .2s ease;z-index:22;overflow:auto}
+.subtask-page[aria-hidden=false]{transform:translateX(0)}
+body.subtask-page-open{overflow:hidden}
+.subtask-page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:16px}
+.subtask-page-head h2{margin:0;font-size:22px;line-height:1.25;color:#26334c}
+.subtask-page-head button{height:36px;padding:0 12px}
+.subtask-page-progress{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:12px;border:1px solid rgba(77,167,170,.22);border-radius:8px;background:rgba(244,251,250,.82)}
+.subtask-page-progress strong{font-size:24px;color:#287174}
+.subtask-page-progress span{font-weight:800;color:#52627b}
+.subtask-list{display:grid;gap:8px;margin-bottom:14px}
+.subtask-check-row{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;padding:12px;border:1px solid rgba(125,145,174,.22);border-radius:8px;background:rgba(255,255,255,.78)}
+.subtask-check-row input{width:18px;height:18px;margin-top:2px;accent-color:#4da7aa}
+.subtask-check-row strong{display:block;color:#26334c}
+.subtask-check-row small{display:block;margin-top:4px;color:#7b889b}
+.subtask-check-row.done{opacity:.68}
+.subtask-check-row.done strong{text-decoration:line-through}
+.subtask-page-add{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;margin-bottom:12px}
+.subtask-page-add label{display:grid;gap:6px;color:#324058;font-weight:800}
+.subtask-page-add input{min-height:40px;border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff;color:#26334c}
+.subtask-page-add button,.subtask-page-actions button,.subtask-preview button{height:40px;padding:0 12px;border-color:rgba(77,167,170,.36);background:rgba(77,167,170,.12);color:#287174;font-weight:800}
+.subtask-page-actions{display:flex;justify-content:flex-end;margin-bottom:12px}
+.subtask-preview-card{display:grid;gap:8px;padding:12px;border:1px solid rgba(156,136,217,.24);border-radius:8px;background:rgba(248,246,255,.86)}
+.subtask-preview-card p{margin:0;color:#52627b}
+.subtask-preview-card ol{margin:0;padding-left:22px;color:#324058}
+@media(max-width:720px){.subtask-page-add{grid-template-columns:1fr}.subtask-page-actions{justify-content:flex-start}}
