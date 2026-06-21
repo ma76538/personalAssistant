@@ -21,3 +21,7 @@
 - Telegram 每日摘要和定時提醒只應提醒「緊急重要」事項，降低噪音。
 - 月曆視圖應結合本地已排程任務和 `kevin@region.mo` Apple Calendar events。
 - LLM 應負責理解、排序建議、追問和經驗沉澱；真正改任務或排程前仍要 preview / confirm。
+
+## 開發工作規則
+
+- 每次完成任何程式、介面或文檔修改後，都要 commit 並 push 到 GitHub，確保本機與遠端 repository 保持一致。
