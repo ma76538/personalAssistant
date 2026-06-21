@@ -1,7 +1,19 @@
 import { z } from "zod";
 import { AppConfig } from "./config.js";
 import { parseFallbackAction } from "./fallbackParser.js";
-import { NextActionSuggestion, NextActionSuggestionSchema, ParsedAction, ParsedActionSchema, PriorityReview, PriorityReviewSchema, Task, TaskTriageResult, TaskTriageResultSchema } from "./types.js";
+import {
+  NextActionSuggestion,
+  NextActionSuggestionSchema,
+  ParsedAction,
+  ParsedActionSchema,
+  PriorityReview,
+  PriorityReviewSchema,
+  SubtaskDecomposition,
+  SubtaskDecompositionSchema,
+  Task,
+  TaskTriageResult,
+  TaskTriageResultSchema
+} from "./types.js";
 
 type MiniMaxMessage = {
   role: "system" | "user" | "assistant";
@@ -41,6 +53,10 @@ const TaskTriageResponseSchema = z.object({
 
 const NextActionResponseSchema = z.object({
   action: NextActionSuggestionSchema
+});
+
+const SubtaskDecompositionResponseSchema = z.object({
+  result: SubtaskDecompositionSchema
 });
 
 export class MiniMaxClient {
@@ -199,6 +215,42 @@ export class MiniMaxClient {
     });
     const result = await this.requestJson([this.message("system", system), this.message("user", user)], NextActionResponseSchema);
     return result.action;
+  }
+
+  async decomposeTask(input: { task: Task; note?: string | null; now: Date }): Promise<SubtaskDecomposition> {
+    const system = [
+      "你是電子秘書的任務拆解助理。只輸出 JSON object，不要 Markdown，不要解釋。",
+      "你只產生 preview，不直接寫入資料庫。",
+      "不要把簡單單步任務硬拆。只有多步、模糊、有依賴、等待或交付的任務才 requiresSubtasks=true。",
+      "採用下一步制：子項目要是 15-90 分鐘內可執行的具體動作。",
+      "如果完成標準不清楚，要在 clarificationQuestions 提問。"
+    ].join("\n");
+    const user = JSON.stringify({
+      now: input.now.toISOString(),
+      task: input.task,
+      note: input.note,
+      schema: {
+        result: {
+          taskKind: "single-step|multi-step|project",
+          requiresSubtasks: "boolean",
+          completionDefinition: "string",
+          subtasks: [
+            {
+              title: "string",
+              status: "pending|in_progress|waiting|blocked|done",
+              followUpAt: "ISO datetime or null optional",
+              completionDefinition: "string or null optional",
+              note: "string or null optional"
+            }
+          ],
+          clarificationQuestions: "string array",
+          experienceRule: "string optional",
+          reason: "string"
+        }
+      }
+    });
+    const result = await this.requestJson([this.message("system", system), this.message("user", user)], SubtaskDecompositionResponseSchema);
+    return result.result;
   }
 
   private async requestJson<T>(messages: MiniMaxMessage[], schema: z.ZodType<T>): Promise<T> {

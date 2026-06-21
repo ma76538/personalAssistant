@@ -11,6 +11,7 @@
 - [Telegram 提醒與每日摘要](./telegram-reminders.md)
 - [Apple Calendar / kevin@region.mo 月曆整合](./calendar-integration.md)
 - [LLM 任務梳理、提醒與經驗沉澱](./llm-workflow-experience.md)
+- [任務子項目與跟進機制](./subtask-followup-mechanism.md)
 - [一致性檢查與已知限制](./consistency-and-known-issues.md)
 
 ## 目前核心結論

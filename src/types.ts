@@ -6,6 +6,9 @@ export type Energy = z.infer<typeof EnergySchema>;
 export const TaskStatusSchema = z.enum(["pending", "scheduled", "in_progress", "done", "cancelled"]);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
+export const SubtaskStatusSchema = z.enum(["pending", "in_progress", "waiting", "blocked", "done"]);
+export type SubtaskStatus = z.infer<typeof SubtaskStatusSchema>;
+
 export const QuadrantSchema = z.enum(["urgent-important", "urgent-not-important", "not-urgent-important", "not-urgent-not-important"]);
 export type Quadrant = z.infer<typeof QuadrantSchema>;
 
@@ -66,6 +69,28 @@ export type Task = {
   updatedAt: string;
 };
 
+export type TaskSubtask = {
+  id: number;
+  taskId: number;
+  title: string;
+  status: SubtaskStatus;
+  followUpAt: string | null;
+  completionDefinition: string | null;
+  note: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TaskSubtaskSummary = {
+  total: number;
+  done: number;
+  pending: number;
+  blocked: number;
+  waiting: number;
+  next: TaskSubtask | null;
+};
+
 export const TaskTriageResultSchema = z.object({
   valueScore: z.number().int().min(1).max(5),
   deadlineType: DeadlineTypeSchema,
@@ -87,6 +112,26 @@ export const NextActionSuggestionSchema = z.object({
   clarificationQuestion: z.string().optional()
 });
 export type NextActionSuggestion = z.infer<typeof NextActionSuggestionSchema>;
+
+export const SubtaskSuggestionSchema = z.object({
+  title: z.string().min(1),
+  status: SubtaskStatusSchema.default("pending"),
+  followUpAt: z.string().datetime().nullable().optional(),
+  completionDefinition: z.string().nullable().optional(),
+  note: z.string().nullable().optional()
+});
+export type SubtaskSuggestion = z.infer<typeof SubtaskSuggestionSchema>;
+
+export const SubtaskDecompositionSchema = z.object({
+  taskKind: z.enum(["single-step", "multi-step", "project"]),
+  requiresSubtasks: z.boolean(),
+  completionDefinition: z.string().min(1),
+  subtasks: z.array(SubtaskSuggestionSchema).default([]),
+  clarificationQuestions: z.array(z.string().min(1)).default([]),
+  experienceRule: z.string().min(1).optional(),
+  reason: z.string().min(1)
+});
+export type SubtaskDecomposition = z.infer<typeof SubtaskDecompositionSchema>;
 
 export const PriorityReviewSchema = z.object({
   taskId: z.number().int().positive(),

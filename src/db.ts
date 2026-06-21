@@ -1,7 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { DEFAULT_REMINDER_POLICY, DeadlineType, DEFAULT_WORK_SETTINGS, PendingAction, PendingActionSchema, ReminderPolicy, ReminderPolicySchema, ReminderStage, Task, WorkSettings, WorkSettingsSchema } from "./types.js";
+import {
+  DEFAULT_REMINDER_POLICY,
+  DeadlineType,
+  DEFAULT_WORK_SETTINGS,
+  PendingAction,
+  PendingActionSchema,
+  ReminderPolicy,
+  ReminderPolicySchema,
+  ReminderStage,
+  SubtaskStatus,
+  Task,
+  TaskSubtask,
+  TaskSubtaskSummary,
+  WorkSettings,
+  WorkSettingsSchema
+} from "./types.js";
 import { nowIso } from "./time.js";
 
 export class AssistantRepository {
@@ -11,6 +26,7 @@ export class AssistantRepository {
     fs.mkdirSync(path.dirname(databasePath), { recursive: true });
     this.db = new Database(databasePath);
     this.db.pragma("journal_mode = WAL");
+    this.db.pragma("foreign_keys = ON");
     this.migrate();
   }
 
@@ -62,6 +78,20 @@ export class AssistantRepository {
         value TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS task_subtasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        follow_up_at TEXT,
+        completion_definition TEXT,
+        note TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      );
     `);
     this.ensureColumn("tasks", "source", "TEXT");
     this.ensureColumn("tasks", "source_id", "TEXT");
@@ -72,6 +102,7 @@ export class AssistantRepository {
     this.ensureColumn("tasks", "project_id", "INTEGER");
     this.ensureColumn("tasks", "progress_note", "TEXT");
     this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_source ON tasks (source, source_id) WHERE source IS NOT NULL AND source_id IS NOT NULL");
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_task_subtasks_task ON task_subtasks (task_id, sort_order, id)");
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -196,6 +227,114 @@ export class AssistantRepository {
       .prepare("SELECT * FROM tasks ORDER BY scheduled_start IS NULL, scheduled_start ASC, updated_at DESC")
       .all()
       .map((row) => this.mapTask(row as Record<string, unknown>));
+  }
+
+  addSubtask(input: {
+    taskId: number;
+    title: string;
+    status?: SubtaskStatus;
+    followUpAt?: string | null;
+    completionDefinition?: string | null;
+    note?: string | null;
+    sortOrder?: number;
+  }): TaskSubtask {
+    if (!this.getTask(input.taskId)) {
+      throw new Error(`Task ${input.taskId} not found`);
+    }
+    const timestamp = nowIso();
+    const nextOrder =
+      input.sortOrder ??
+      Number((this.db.prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM task_subtasks WHERE task_id = ?").get(input.taskId) as { next_order: number }).next_order);
+    const result = this.db
+      .prepare(
+        `INSERT INTO task_subtasks (
+          task_id, title, status, follow_up_at, completion_definition, note, sort_order, created_at, updated_at
+        ) VALUES (
+          @taskId, @title, @status, @followUpAt, @completionDefinition, @note, @sortOrder, @createdAt, @updatedAt
+        )`
+      )
+      .run({
+        taskId: input.taskId,
+        title: input.title,
+        status: input.status ?? "pending",
+        followUpAt: input.followUpAt ?? null,
+        completionDefinition: input.completionDefinition ?? null,
+        note: input.note ?? null,
+        sortOrder: nextOrder,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+    this.touchTask(input.taskId);
+    return this.getSubtask(Number(result.lastInsertRowid))!;
+  }
+
+  getSubtask(id: number): TaskSubtask | null {
+    const row = this.db.prepare("SELECT * FROM task_subtasks WHERE id = ?").get(id);
+    return row ? this.mapSubtask(row as Record<string, unknown>) : null;
+  }
+
+  listSubtasks(taskId: number): TaskSubtask[] {
+    return this.db
+      .prepare("SELECT * FROM task_subtasks WHERE task_id = ? ORDER BY sort_order ASC, id ASC")
+      .all(taskId)
+      .map((row) => this.mapSubtask(row as Record<string, unknown>));
+  }
+
+  listSubtasksForTasks(taskIds: number[]): Record<number, TaskSubtask[]> {
+    if (taskIds.length === 0) {
+      return {};
+    }
+    const placeholders = taskIds.map(() => "?").join(",");
+    const rows = this.db.prepare(`SELECT * FROM task_subtasks WHERE task_id IN (${placeholders}) ORDER BY task_id ASC, sort_order ASC, id ASC`).all(...taskIds);
+    const grouped: Record<number, TaskSubtask[]> = {};
+    for (const row of rows) {
+      const subtask = this.mapSubtask(row as Record<string, unknown>);
+      grouped[subtask.taskId] = grouped[subtask.taskId] || [];
+      grouped[subtask.taskId].push(subtask);
+    }
+    return grouped;
+  }
+
+  updateSubtask(id: number, patch: Partial<Omit<TaskSubtask, "id" | "taskId" | "createdAt" | "updatedAt">>): TaskSubtask {
+    const current = this.getSubtask(id);
+    if (!current) {
+      throw new Error(`Subtask ${id} not found`);
+    }
+    const next = { ...current, ...patch, updatedAt: nowIso() };
+    this.db
+      .prepare(
+        `UPDATE task_subtasks SET
+          title = @title,
+          status = @status,
+          follow_up_at = @followUpAt,
+          completion_definition = @completionDefinition,
+          note = @note,
+          sort_order = @sortOrder,
+          updated_at = @updatedAt
+        WHERE id = @id`
+      )
+      .run(next);
+    this.touchTask(current.taskId);
+    return this.getSubtask(id)!;
+  }
+
+  completeNextSubtask(taskId: number): TaskSubtask | null {
+    const next = this.nextOpenSubtask(taskId);
+    return next ? this.updateSubtask(next.id, { status: "done" }) : null;
+  }
+
+  markNextSubtaskBlocked(taskId: number, note?: string | null): TaskSubtask | null {
+    const next = this.nextOpenSubtask(taskId);
+    return next ? this.updateSubtask(next.id, { status: "blocked", note: note || next.note || "卡住，需要拆更細下一步。" }) : null;
+  }
+
+  subtaskSummary(taskId: number): TaskSubtaskSummary {
+    return summarizeSubtasks(this.listSubtasks(taskId));
+  }
+
+  subtaskSummariesForTasks(taskIds: number[]): Record<number, TaskSubtaskSummary> {
+    const grouped = this.listSubtasksForTasks(taskIds);
+    return Object.fromEntries(taskIds.map((taskId) => [taskId, summarizeSubtasks(grouped[taskId] || [])]));
   }
 
   listExternalTasks(source: string): Task[] {
@@ -494,6 +633,46 @@ export class AssistantRepository {
       updatedAt: String(row.updated_at)
     };
   }
+
+  private mapSubtask(row: Record<string, unknown>): TaskSubtask {
+    return {
+      id: Number(row.id),
+      taskId: Number(row.task_id),
+      title: String(row.title),
+      status: String(row.status) as SubtaskStatus,
+      followUpAt: row.follow_up_at ? String(row.follow_up_at) : null,
+      completionDefinition: row.completion_definition ? String(row.completion_definition) : null,
+      note: row.note ? String(row.note) : null,
+      sortOrder: Number(row.sort_order ?? 0),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at)
+    };
+  }
+
+  private nextOpenSubtask(taskId: number): TaskSubtask | null {
+    const row = this.db
+      .prepare("SELECT * FROM task_subtasks WHERE task_id = ? AND status != 'done' ORDER BY sort_order ASC, id ASC LIMIT 1")
+      .get(taskId);
+    return row ? this.mapSubtask(row as Record<string, unknown>) : null;
+  }
+
+  private touchTask(taskId: number): void {
+    this.db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(nowIso(), taskId);
+  }
+}
+
+function summarizeSubtasks(subtasks: TaskSubtask[]): TaskSubtaskSummary {
+  const done = subtasks.filter((item) => item.status === "done").length;
+  const blocked = subtasks.filter((item) => item.status === "blocked").length;
+  const waiting = subtasks.filter((item) => item.status === "waiting").length;
+  return {
+    total: subtasks.length,
+    done,
+    pending: subtasks.length - done,
+    blocked,
+    waiting,
+    next: subtasks.find((item) => item.status !== "done") || null
+  };
 }
 
 function aggregateSchedule(plan: Array<{ taskId: number; scheduledStart: string; scheduledEnd: string }>): Array<{ taskId: number; scheduledStart: string; scheduledEnd: string }> {

@@ -240,6 +240,47 @@ describe("dashboard API", () => {
     expect(repo.getTask(project.id)?.progressNote).toContain("Calendar 權限未開");
   });
 
+  it("supports optional subtasks without auto-decomposing tasks", async () => {
+    const { repo, baseUrl } = createHarness();
+    const project = repo.addTask({
+      title: "準備社工局項目俾阿成",
+      durationMinutes: 120,
+      quadrant: "urgent-important",
+      valueScore: 5,
+      isProject: true
+    });
+
+    const previewResponse = await fetch(`${baseUrl}/api/tasks/${project.id}/subtasks/decompose-preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: "只要 preview，不要自動寫入" })
+    });
+    const preview = (await previewResponse.json()) as { decomposition: { requiresSubtasks: boolean; subtasks: Array<{ title: string }> } };
+    expect(previewResponse.status).toBe(200);
+    expect(preview.decomposition.requiresSubtasks).toBe(true);
+    expect(preview.decomposition.subtasks.length).toBeGreaterThan(0);
+    expect(repo.listSubtasks(project.id)).toHaveLength(0);
+
+    const addResponse = await fetch(`${baseUrl}/api/tasks/${project.id}/subtasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "確認完成標準", completionDefinition: "知道交付給阿成的內容" })
+    });
+    expect(addResponse.status).toBe(201);
+    expect(repo.subtaskSummary(project.id).total).toBe(1);
+
+    const tasksResponse = await fetch(`${baseUrl}/api/tasks`);
+    const tasksPayload = (await tasksResponse.json()) as { tasks: Array<{ id: number; subtaskSummary: { total: number; pending: number; next: { title: string } | null } }> };
+    const taskPayload = tasksPayload.tasks.find((task) => task.id === project.id);
+    expect(taskPayload?.subtaskSummary.total).toBe(1);
+    expect(taskPayload?.subtaskSummary.next?.title).toBe("確認完成標準");
+
+    const completeNextResponse = await fetch(`${baseUrl}/api/tasks/${project.id}/subtasks/complete-next`, { method: "POST" });
+    expect(completeNextResponse.status).toBe(200);
+    expect(repo.subtaskSummary(project.id).done).toBe(1);
+    expect(repo.getTask(project.id)?.status).not.toBe("done");
+  });
+
   it("clears completed tasks", async () => {
     const { repo, baseUrl } = createHarness();
     const done = repo.addTask({ title: "已完成任務" });

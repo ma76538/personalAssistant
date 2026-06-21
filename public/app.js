@@ -289,6 +289,10 @@ async function handleTaskButtonClick(event) {
   if (button.dataset.action === "status") await updateTaskStatus(id, button.dataset.status);
   if (button.dataset.action === "check-in") await checkInTask(id, button.dataset.outcome || "defer");
   if (button.dataset.action === "next-action") await previewNextAction(id);
+  if (button.dataset.action === "add-subtask") await addSubtask(task);
+  if (button.dataset.action === "decompose-subtasks") await previewSubtaskDecomposition(task);
+  if (button.dataset.action === "complete-next-subtask") await completeNextSubtask(task);
+  if (button.dataset.action === "stuck-next-subtask") await markNextSubtaskStuck(task);
   await loadDashboard();
 }
 
@@ -552,6 +556,7 @@ function taskRow(task, rank) {
     <div class="task-main">
       <strong>${esc(task.title)}</strong>
       ${taskMeta(task)}
+      ${subtaskPanel(task)}
       ${startMarkup ? `<div class="task-dates">${startMarkup}</div>` : ""}
       ${needsDue ? `<p class="due-warning">每個任務都必須加 Due Date，未補前不會自動排程。</p>` : ""}
     </div>
@@ -560,11 +565,28 @@ function taskRow(task, rank) {
       <button class="${status === "in_progress" ? "active" : ""}" data-action="status" data-status="in_progress" data-id="${task.id}" type="button">進行中</button>
       <button data-action="check-in" data-outcome="complete" data-id="${task.id}" type="button">完成</button>
       <button data-action="check-in" data-outcome="stuck" data-id="${task.id}" type="button">卡住</button>
+      <button data-action="decompose-subtasks" data-id="${task.id}" type="button">拆解</button>
+      <button data-action="add-subtask" data-id="${task.id}" type="button">新增子項目</button>
+      ${task.subtaskSummary?.pending ? `<button data-action="complete-next-subtask" data-id="${task.id}" type="button">完成下一步</button><button data-action="stuck-next-subtask" data-id="${task.id}" type="button">下一步卡住</button>` : ""}
       ${task.isProject ? `<button data-action="next-action" data-id="${task.id}" type="button">下一步</button>` : ""}
       <button data-action="pending-bucket" data-id="${task.id}" type="button">放待定</button>
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
     </div>
   </article>`;
+}
+
+function subtaskPanel(task) {
+  const summary = task.subtaskSummary;
+  if (!summary?.total) {
+    return `<div class="subtask-strip empty-subtasks"><span>未拆子項目</span><small>需要時才按「拆解」或「新增子項目」</small></div>`;
+  }
+  const next = summary.next;
+  const stateText = summary.blocked ? `卡住 ${summary.blocked}` : summary.waiting ? `等待 ${summary.waiting}` : `未完成 ${summary.pending}`;
+  return `<div class="subtask-strip ${summary.blocked ? "has-blocked" : ""}">
+    <span>子項目 ${summary.done}/${summary.total}</span>
+    <strong>${next ? `下一步：${esc(next.title)}` : "所有子項目已完成，請判斷母任務是否完成"}</strong>
+    <small>${stateText}</small>
+  </div>`;
 }
 
 function renderGantt() {
@@ -824,6 +846,68 @@ async function previewNextAction(id) {
     body: JSON.stringify({ progressNote: note })
   });
   setReviewStatus(`<strong>下一步建議</strong><p>${esc(response.action.title)}｜${response.action.durationMinutes} 分鐘</p><p>${esc(response.action.reason)}</p>`);
+}
+
+async function addSubtask(task) {
+  const title = window.prompt(`新增「${task.title}」的子項目：`);
+  if (!title?.trim()) return;
+  const completionDefinition = window.prompt("這個子項目做到甚麼算完成？可留空。") || "";
+  await requestJson(`/api/tasks/${task.id}/subtasks`, {
+    method: "POST",
+    body: JSON.stringify({ title: title.trim(), completionDefinition: completionDefinition.trim() || null })
+  });
+  setReviewStatus(`已新增「${esc(task.title)}」的子項目：${esc(title.trim())}`, false);
+}
+
+async function previewSubtaskDecomposition(task) {
+  const note = window.prompt("補充完成標準、卡點或已知線索（可留空）。系統只會產生 preview，不會自動寫入。") || "";
+  const response = await requestJson(`/api/tasks/${task.id}/subtasks/decompose-preview`, {
+    method: "POST",
+    body: JSON.stringify({ note })
+  });
+  const decomposition = response.decomposition;
+  if (!decomposition.requiresSubtasks || !decomposition.subtasks?.length) {
+    window.alert(`這件事暫時不建議拆子項目。\n\n原因：${decomposition.reason}\n\n完成定義：${decomposition.completionDefinition}`);
+    return;
+  }
+  const preview = decomposition.subtasks.map((item, index) => `${index + 1}. ${item.title}`).join("\n");
+  const ok = window.confirm(`拆解建議：\n${preview}\n\n完成定義：${decomposition.completionDefinition}\n\n是否將以上建議加入為子項目？`);
+  if (!ok) return;
+  for (const item of decomposition.subtasks) {
+    await requestJson(`/api/tasks/${task.id}/subtasks`, {
+      method: "POST",
+      body: JSON.stringify({
+        title: item.title,
+        status: item.status || "pending",
+        followUpAt: item.followUpAt || null,
+        completionDefinition: item.completionDefinition || decomposition.completionDefinition,
+        note: item.note || null
+      })
+    });
+  }
+  setReviewStatus(`<strong>已加入子項目</strong><p>${esc(decomposition.reason)}</p>${decomposition.experienceRule ? `<p>${esc(decomposition.experienceRule)}</p>` : ""}`);
+}
+
+async function completeNextSubtask(task) {
+  const response = await requestJson(`/api/tasks/${task.id}/subtasks/complete-next`, { method: "POST" });
+  if (!response.subtask) {
+    window.alert("這個任務沒有未完成子項目。請自行判斷母任務是否完成。");
+    return;
+  }
+  setReviewStatus(`已完成下一步：${response.subtask.title}。母任務未自動完成。`, false);
+}
+
+async function markNextSubtaskStuck(task) {
+  const note = window.prompt("下一步卡在哪？") || "";
+  const response = await requestJson(`/api/tasks/${task.id}/subtasks/stuck-next`, {
+    method: "POST",
+    body: JSON.stringify({ note })
+  });
+  if (!response.subtask) {
+    window.alert("這個任務沒有可標記卡住的未完成子項目。");
+    return;
+  }
+  setReviewStatus(`已標記下一步卡住：${response.subtask.title}`, false);
 }
 
 function setReviewStatus(content, asHtml = true) {

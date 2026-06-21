@@ -111,3 +111,12 @@
 .compact-focus .empty{padding:18px;font-size:16px;white-space:normal}
 @media(max-width:1200px){.compact-focus .focus-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.compact-focus{padding:14px}.compact-focus h2{font-size:24px}.compact-focus .focus-list{grid-template-columns:1fr}.compact-focus .focus-item{min-height:82px}}
+.subtask-strip{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;margin-top:4px;padding:7px 9px;border:1px solid rgba(77,167,170,.18);border-radius:8px;background:rgba(244,251,250,.72);color:#52627b}
+.subtask-strip span{font-size:11px;font-weight:900;color:#287174;white-space:nowrap}
+.subtask-strip strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px!important;color:#31435d!important}
+.subtask-strip small{font-size:11px;color:#7b889b;white-space:nowrap}
+.subtask-strip.has-blocked{border-color:rgba(232,113,120,.32);background:rgba(255,248,248,.72)}
+.subtask-strip.has-blocked span{color:#bd4d55}
+.empty-subtasks{background:rgba(255,255,255,.55);border-style:dashed}
+.empty-subtasks span{color:#7b889b}
+@media(max-width:900px){.subtask-strip{grid-template-columns:1fr}.subtask-strip strong,.subtask-strip small{white-space:normal}}

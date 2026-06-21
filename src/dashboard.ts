@@ -9,8 +9,19 @@ import { deleteAppleReminderForTask, syncAppleReminders, writeTaskToAppleReminde
 import { buildSchedule, BusyBlock } from "./scheduler.js";
 import { prioritizeTasks } from "./prioritizer.js";
 import { endOfLocalDay, startOfLocalDay, startOfNextWeek } from "./time.js";
-import { DeadlineTypeSchema, EnergySchema, NextActionSuggestion, QuadrantSchema, ReminderPolicySchema, Task, TaskStatusSchema, WorkSettingsSchema } from "./types.js";
-import { buildTriageSuggestion, fallbackNextAction } from "./triage.js";
+import {
+  DeadlineTypeSchema,
+  EnergySchema,
+  NextActionSuggestion,
+  QuadrantSchema,
+  ReminderPolicySchema,
+  SubtaskStatusSchema,
+  Task,
+  TaskSubtaskSummary,
+  TaskStatusSchema,
+  WorkSettingsSchema
+} from "./types.js";
+import { buildSubtaskDecomposition, buildTriageSuggestion, fallbackNextAction } from "./triage.js";
 import { MiniMaxClient } from "./minimax.js";
 import {
   calendarSettings,
@@ -30,7 +41,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
 
     try {
       if (url.pathname === "/api/tasks" && request.method === "GET") {
-        sendJson(response, { tasks: repo.listAllTasks() });
+        sendJson(response, { tasks: attachSubtaskSummaries(repo, repo.listAllTasks()) });
         return;
       }
 
@@ -76,6 +87,77 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
             })
           }))
         });
+        return;
+      }
+
+      const taskSubtasksMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/subtasks$/);
+      if (taskSubtasksMatch && request.method === "GET") {
+        const taskId = Number(taskSubtasksMatch[1]);
+        if (!repo.getTask(taskId)) {
+          sendJson(response, { error: "Task not found" }, 404);
+          return;
+        }
+        sendJson(response, { subtasks: repo.listSubtasks(taskId), summary: repo.subtaskSummary(taskId) });
+        return;
+      }
+
+      if (taskSubtasksMatch && request.method === "POST") {
+        const taskId = Number(taskSubtasksMatch[1]);
+        const input = SubtaskInputSchema.parse(await readJson(request));
+        const subtask = repo.addSubtask({ taskId, ...input });
+        sendJson(response, { subtask, summary: repo.subtaskSummary(taskId) }, 201);
+        return;
+      }
+
+      const decomposeMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/subtasks\/decompose-preview$/);
+      if (decomposeMatch && request.method === "POST") {
+        const taskId = Number(decomposeMatch[1]);
+        const task = repo.getTask(taskId);
+        if (!task) {
+          sendJson(response, { error: "Task not found" }, 404);
+          return;
+        }
+        const input = SubtaskDecomposeSchema.parse(await readJson(request));
+        sendJson(response, { task, decomposition: await subtaskDecompositionPreview(task, input.note, minimax) });
+        return;
+      }
+
+      const completeNextMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/subtasks\/complete-next$/);
+      if (completeNextMatch && request.method === "POST") {
+        const taskId = Number(completeNextMatch[1]);
+        if (!repo.getTask(taskId)) {
+          sendJson(response, { error: "Task not found" }, 404);
+          return;
+        }
+        const subtask = repo.completeNextSubtask(taskId);
+        sendJson(response, { subtask, summary: repo.subtaskSummary(taskId) });
+        return;
+      }
+
+      const stuckNextMatch = url.pathname.match(/^\/api\/tasks\/(\d+)\/subtasks\/stuck-next$/);
+      if (stuckNextMatch && request.method === "POST") {
+        const taskId = Number(stuckNextMatch[1]);
+        if (!repo.getTask(taskId)) {
+          sendJson(response, { error: "Task not found" }, 404);
+          return;
+        }
+        const input = SubtaskStuckSchema.parse(await readJson(request));
+        const subtask = repo.markNextSubtaskBlocked(taskId, input.note);
+        sendJson(response, { subtask, summary: repo.subtaskSummary(taskId) });
+        return;
+      }
+
+      const subtaskMatch = url.pathname.match(/^\/api\/subtasks\/(\d+)$/);
+      if (subtaskMatch && request.method === "PATCH") {
+        const subtaskId = Number(subtaskMatch[1]);
+        const current = repo.getSubtask(subtaskId);
+        if (!current) {
+          sendJson(response, { error: "Subtask not found" }, 404);
+          return;
+        }
+        const input = SubtaskPatchSchema.parse(await readJson(request));
+        const subtask = repo.updateSubtask(subtaskId, input);
+        sendJson(response, { subtask, summary: repo.subtaskSummary(current.taskId) });
         return;
       }
 
@@ -255,7 +337,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
     }
 
     if (url.pathname === "/api/summary") {
-      const tasks = repo.listAllTasks();
+      const tasks = attachSubtaskSummaries(repo, repo.listAllTasks());
       const now = new Date();
       const todayStart = startOfLocalDay(now).toISOString();
       const todayEnd = endOfLocalDay(now).toISOString();
@@ -278,8 +360,8 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         missingDeadlines: tasks.filter((task) => !["done", "cancelled"].includes(task.status) && task.quadrant && !task.deadline),
         scheduleSegments,
         overdue: tasks.filter((task) => task.deadline && task.status !== "done" && new Date(task.deadline) < now).length,
-        today: repo.listScheduledBetween(todayStart, todayEnd),
-        week: repo.listScheduledBetween(todayStart, weekEnd),
+        today: attachSubtaskSummaries(repo, repo.listScheduledBetween(todayStart, todayEnd)),
+        week: attachSubtaskSummaries(repo, repo.listScheduledBetween(todayStart, weekEnd)),
         month: tasks
           .filter((task) => task.deadline && task.deadline >= monthStart && task.deadline < monthEnd && !["done", "cancelled"].includes(task.status))
           .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()),
@@ -366,6 +448,32 @@ const NextActionPreviewSchema = z.object({
   progressNote: z.string().trim().nullable().optional()
 });
 
+const SubtaskInputSchema = z.object({
+  title: z.string().trim().min(1),
+  status: SubtaskStatusSchema.default("pending"),
+  followUpAt: z.string().datetime().nullable().optional(),
+  completionDefinition: z.string().trim().nullable().optional(),
+  note: z.string().trim().nullable().optional(),
+  sortOrder: z.number().int().min(0).optional()
+});
+
+const SubtaskPatchSchema = z.object({
+  title: z.string().trim().min(1).optional(),
+  status: SubtaskStatusSchema.optional(),
+  followUpAt: z.string().datetime().nullable().optional(),
+  completionDefinition: z.string().trim().nullable().optional(),
+  note: z.string().trim().nullable().optional(),
+  sortOrder: z.number().int().min(0).optional()
+});
+
+const SubtaskDecomposeSchema = z.object({
+  note: z.string().trim().nullable().optional()
+});
+
+const SubtaskStuckSchema = z.object({
+  note: z.string().trim().nullable().optional()
+});
+
 function sendJson(response: http.ServerResponse, payload: unknown, status = 200): void {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   response.end(JSON.stringify(payload));
@@ -426,6 +534,17 @@ async function nextActionPreview(project: Task, progressNote: string | null | un
   return fallbackNextAction(project, progressNote);
 }
 
+async function subtaskDecompositionPreview(task: Task, note: string | null | undefined, minimax?: MiniMaxClient) {
+  if (minimax) {
+    try {
+      return await minimax.decomposeTask({ task, note, now: new Date() });
+    } catch (error) {
+      console.warn("MiniMax subtask decomposition failed, using fallback", error);
+    }
+  }
+  return buildSubtaskDecomposition(task, note);
+}
+
 async function triagePreview(task: Task, settings: z.infer<typeof WorkSettingsSchema>, minimax?: MiniMaxClient) {
   if (minimax) {
     try {
@@ -444,6 +563,11 @@ async function triagePreview(task: Task, settings: z.infer<typeof WorkSettingsSc
     dailyWorkCapacityHours: settings.dailyWorkCapacityHours,
     secretaryMvpMode: settings.secretaryMvpMode
   });
+}
+
+function attachSubtaskSummaries<T extends Task>(repo: AssistantRepository, tasks: T[]): Array<T & { subtaskSummary: TaskSubtaskSummary }> {
+  const summaries = repo.subtaskSummariesForTasks(tasks.map((task) => task.id));
+  return tasks.map((task) => ({ ...task, subtaskSummary: summaries[task.id] || repo.subtaskSummary(task.id) }));
 }
 
 function calendarEventsToBusyBlocks(events: CalendarEvent[]): BusyBlock[] {
