@@ -22,7 +22,6 @@ const subtaskPageTitleEl = $("subtask-page-title");
 const subtaskPageMetaEl = $("subtask-page-meta");
 const subtaskPageProgressEl = $("subtask-page-progress");
 const subtaskListEl = $("subtask-list");
-const subtaskPreviewEl = $("subtask-preview");
 const taskFormEl = $("task-form");
 const drawerTitleEl = $("drawer-title");
 const reminderSettingsFormEl = $("reminder-settings-form");
@@ -59,7 +58,6 @@ let reminderSettingsSaveTimer = null;
 let editingTask = null;
 let subtaskPageTask = null;
 let subtaskPageSubtasks = [];
-let pendingSubtaskSuggestions = [];
 
 $("refresh").addEventListener("click", loadDashboard);
 $("new-task").addEventListener("click", () => openEditor());
@@ -69,9 +67,7 @@ drawerBackdropEl.addEventListener("click", closeEditor);
 subtaskBackdropEl?.addEventListener("click", closeSubtaskPage);
 $("close-subtask-page")?.addEventListener("click", closeSubtaskPage);
 $("add-subtask-submit")?.addEventListener("click", addSubtaskFromPage);
-$("subtask-decompose")?.addEventListener("click", previewSubtaskDecompositionForPage);
 subtaskListEl?.addEventListener("change", handleSubtaskCheckboxChange);
-subtaskPreviewEl?.addEventListener("click", handleSubtaskPreviewClick);
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
 $("connect-google-calendar")?.addEventListener("click", connectGoogleCalendar);
@@ -864,8 +860,6 @@ async function previewNextAction(id) {
 
 async function openSubtaskPage(task) {
   subtaskPageTask = task;
-  pendingSubtaskSuggestions = [];
-  if (subtaskPreviewEl) subtaskPreviewEl.innerHTML = "";
   if (subtaskBackdropEl) subtaskBackdropEl.hidden = false;
   subtaskPageEl?.setAttribute("aria-hidden", "false");
   document.body.classList.add("subtask-page-open");
@@ -875,11 +869,9 @@ async function openSubtaskPage(task) {
 function closeSubtaskPage() {
   subtaskPageTask = null;
   subtaskPageSubtasks = [];
-  pendingSubtaskSuggestions = [];
   if (subtaskBackdropEl) subtaskBackdropEl.hidden = true;
   subtaskPageEl?.setAttribute("aria-hidden", "true");
   document.body.classList.remove("subtask-page-open");
-  if (subtaskPreviewEl) subtaskPreviewEl.innerHTML = "";
 }
 
 async function refreshSubtaskPage() {
@@ -898,7 +890,7 @@ function renderSubtaskPage(summary) {
   subtaskPageProgressEl.innerHTML = `<strong>${done}/${total}</strong><span>${total ? "已完成子項目" : "尚未建立子項目"}</span>`;
   subtaskListEl.innerHTML = subtaskPageSubtasks.length
     ? subtaskPageSubtasks.map(subtaskCheckRow).join("")
-    : `<div class="drop-empty">這個任務暫時未有子項目。可手動新增，或先產生拆解建議。</div>`;
+    : `<div class="drop-empty">這個任務暫時未有子項目。可在下方新增子項目。</div>`;
 }
 
 function subtaskCheckRow(item) {
@@ -953,49 +945,6 @@ async function handleSubtaskCheckboxChange(event) {
     method: "PATCH",
     body: JSON.stringify({ status: input.checked ? "done" : "pending" })
   });
-  await refreshSubtaskPage();
-  await loadDashboard();
-}
-
-async function previewSubtaskDecompositionForPage() {
-  if (!subtaskPageTask) return;
-  const note = window.prompt("補充完成標準、卡點或已知線索（可留空）。系統只會產生 preview，不會自動寫入。") || "";
-  const response = await requestJson(`/api/tasks/${subtaskPageTask.id}/subtasks/decompose-preview`, {
-    method: "POST",
-    body: JSON.stringify({ note })
-  });
-  const decomposition = response.decomposition;
-  pendingSubtaskSuggestions = decomposition.subtasks || [];
-  if (!decomposition.requiresSubtasks || !pendingSubtaskSuggestions.length) {
-    subtaskPreviewEl.innerHTML = `<div class="subtask-preview-card"><strong>暫時不建議拆子項目</strong><p>${esc(decomposition.reason || "這件事看起來可作為單步任務處理。")}</p></div>`;
-    return;
-  }
-  subtaskPreviewEl.innerHTML = `<div class="subtask-preview-card">
-    <strong>拆解建議</strong>
-    <p>${esc(decomposition.reason || "可拆成以下下一步。")}</p>
-    <ol>${pendingSubtaskSuggestions.map((item) => `<li>${esc(item.title)}</li>`).join("")}</ol>
-    ${decomposition.completionDefinition ? `<p>完成定義：${esc(decomposition.completionDefinition)}</p>` : ""}
-    <button data-action="add-preview-subtasks" type="button">加入以上子項目</button>
-  </div>`;
-}
-
-async function handleSubtaskPreviewClick(event) {
-  const button = event.target.closest("button");
-  if (!button || button.dataset.action !== "add-preview-subtasks" || !subtaskPageTask) return;
-  for (const item of pendingSubtaskSuggestions) {
-    await requestJson(`/api/tasks/${subtaskPageTask.id}/subtasks`, {
-      method: "POST",
-      body: JSON.stringify({
-        title: item.title,
-        status: item.status || "pending",
-        followUpAt: item.followUpAt || null,
-        completionDefinition: item.completionDefinition || null,
-        note: item.note || null
-      })
-    });
-  }
-  pendingSubtaskSuggestions = [];
-  subtaskPreviewEl.innerHTML = "";
   await refreshSubtaskPage();
   await loadDashboard();
 }

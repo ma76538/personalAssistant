@@ -137,9 +137,5 @@ body.subtask-page-open{overflow:hidden}
 .subtask-page-add{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;margin-bottom:12px}
 .subtask-page-add label{display:grid;gap:6px;color:#324058;font-weight:800}
 .subtask-page-add input{min-height:40px;border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff;color:#26334c}
-.subtask-page-add button,.subtask-page-actions button,.subtask-preview button{height:40px;padding:0 12px;border-color:rgba(77,167,170,.36);background:rgba(77,167,170,.12);color:#287174;font-weight:800}
-.subtask-page-actions{display:flex;justify-content:flex-end;margin-bottom:12px}
-.subtask-preview-card{display:grid;gap:8px;padding:12px;border:1px solid rgba(156,136,217,.24);border-radius:8px;background:rgba(248,246,255,.86)}
-.subtask-preview-card p{margin:0;color:#52627b}
-.subtask-preview-card ol{margin:0;padding-left:22px;color:#324058}
-@media(max-width:720px){.subtask-page-add{grid-template-columns:1fr}.subtask-page-actions{justify-content:flex-start}}
+.subtask-page-add button{height:40px;padding:0 12px;border-color:rgba(77,167,170,.36);background:rgba(77,167,170,.12);color:#287174;font-weight:800}
+@media(max-width:720px){.subtask-page-add{grid-template-columns:1fr}}
