@@ -1,4 +1,5 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,9 @@ import { prioritizeTasks } from "./prioritizer.js";
 import { endOfLocalDay, startOfLocalDay, startOfNextWeek } from "./time.js";
 import {
   DeadlineTypeSchema,
+  DashboardUser,
+  DashboardUserRoleSchema,
+  DashboardUserStatusSchema,
   EnergySchema,
   NextActionSuggestion,
   QuadrantSchema,
@@ -31,15 +35,89 @@ import {
   listCalendarEvents,
   saveCalendarSettings
 } from "./calendarProvider.js";
+import {
+  buildGoogleLoginAuthUrl,
+  exchangeGoogleLoginCode,
+  fetchGoogleUserProfile,
+  hasGoogleLoginCredentials,
+  GoogleLoginConfig
+} from "./googleAuth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "../public");
 
-export function startDashboardServer(repo: AssistantRepository, port: number, minimax?: MiniMaxClient): http.Server {
+export type DashboardServerOptions = {
+  auth?: {
+    enabled?: boolean;
+    publicOrigin?: string;
+    adminEmails?: string[];
+    sessionDays?: number;
+    googleClientId?: string;
+    googleClientSecret?: string;
+  };
+};
+
+type DashboardAuthConfig = Required<NonNullable<DashboardServerOptions["auth"]>>;
+
+export function startDashboardServer(repo: AssistantRepository, port: number, minimax?: MiniMaxClient, options: DashboardServerOptions = {}): http.Server {
+  const auth = normalizeDashboardAuth(options.auth);
+  if (auth.adminEmails.length) {
+    repo.ensureDashboardAdminUsers(auth.adminEmails);
+  }
+
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
+    const origin = requestOrigin(request, auth.publicOrigin);
+    const dashboardUser = auth.enabled ? currentDashboardUser(repo, request) : null;
+
+    if (auth.enabled) {
+      const authHandled = await handleDashboardAuthRoute(repo, auth, request, response, url, origin, dashboardUser);
+      if (authHandled) {
+        return;
+      }
+      if (!dashboardUser) {
+        rejectUnauthenticated(request, response, url);
+        return;
+      }
+      if (url.pathname.startsWith("/api/admin") && dashboardUser.role !== "admin") {
+        sendJson(response, { error: "只有管理員可以管理用戶。" }, 403);
+        return;
+      }
+    }
 
     try {
+      if (url.pathname === "/api/me" && request.method === "GET") {
+        sendJson(response, {
+          authEnabled: auth.enabled,
+          user: dashboardUser
+            ? publicDashboardUser(dashboardUser)
+            : { id: 0, email: "local-dashboard", name: "本機模式", role: "admin", status: "active" },
+          loginRedirectUri: `${origin}/oauth/google-login/callback`,
+          calendarRedirectUri: `${origin}/oauth/google-calendar/callback`
+        });
+        return;
+      }
+
+      if (url.pathname === "/api/admin/users" && request.method === "GET") {
+        sendJson(response, { users: repo.listDashboardUsers().map(publicDashboardUser) });
+        return;
+      }
+
+      if (url.pathname === "/api/admin/users" && request.method === "POST") {
+        const input = DashboardUserInputSchema.parse(await readJson(request));
+        const user = repo.upsertDashboardUser(input);
+        sendJson(response, { user: publicDashboardUser(user) }, 201);
+        return;
+      }
+
+      const dashboardUserMatch = url.pathname.match(/^\/api\/admin\/users\/(\d+)$/);
+      if (dashboardUserMatch && request.method === "PATCH") {
+        const input = DashboardUserPatchSchema.parse(await readJson(request));
+        const user = repo.updateDashboardUser(Number(dashboardUserMatch[1]), input);
+        sendJson(response, { user: publicDashboardUser(user) });
+        return;
+      }
+
       if (url.pathname === "/api/tasks" && request.method === "GET") {
         sendJson(response, { tasks: attachSubtaskSummaries(repo, repo.listAllTasks()) });
         return;
@@ -306,21 +384,21 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
       }
 
       if (url.pathname === "/api/calendar-settings" && request.method === "GET") {
-        sendJson(response, calendarSettings(repo, requestOrigin(request)));
+        sendJson(response, calendarSettings(repo, origin));
         return;
       }
 
       if (url.pathname === "/api/calendar-settings" && request.method === "PUT") {
         const input = CalendarSettingsSchema.parse(await readJson(request));
         saveCalendarSettings(repo, input);
-        sendJson(response, calendarSettings(repo, requestOrigin(request)));
+        sendJson(response, calendarSettings(repo, origin));
         return;
       }
 
       if (url.pathname === "/api/calendar-settings/google-auth-url" && request.method === "POST") {
         sendJson(response, {
-          authUrl: createGoogleCalendarAuthUrl(repo, requestOrigin(request)),
-          redirectUri: `${requestOrigin(request)}/oauth/google-calendar/callback`
+          authUrl: createGoogleCalendarAuthUrl(repo, origin),
+          redirectUri: `${origin}/oauth/google-calendar/callback`
         });
         return;
       }
@@ -332,7 +410,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
           sendHtml(response, "Google Calendar 連接失敗", "Google 沒有回傳授權 code 或 state，請回 Dashboard 重新連接。", 400);
           return;
         }
-        await completeGoogleCalendarOAuth(repo, { code, state, origin: requestOrigin(request) });
+        await completeGoogleCalendarOAuth(repo, { code, state, origin });
         await reschedule(repo);
         sendHtml(response, "Google Calendar 已連接", "你可以關閉這個分頁，回到 Dashboard 按刷新。");
         return;
@@ -496,6 +574,163 @@ const SubtaskStuckSchema = z.object({
   note: z.string().trim().nullable().optional()
 });
 
+const DashboardUserInputSchema = z.object({
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  name: z.string().trim().nullable().optional(),
+  role: DashboardUserRoleSchema.default("user"),
+  status: DashboardUserStatusSchema.default("active")
+});
+
+const DashboardUserPatchSchema = z.object({
+  name: z.string().trim().nullable().optional(),
+  role: DashboardUserRoleSchema.optional(),
+  status: DashboardUserStatusSchema.optional()
+});
+
+function normalizeDashboardAuth(input: DashboardServerOptions["auth"]): DashboardAuthConfig {
+  return {
+    enabled: Boolean(input?.enabled),
+    publicOrigin: input?.publicOrigin?.replace(/\/$/, "") || "",
+    adminEmails: [...new Set((input?.adminEmails || []).map((email) => email.trim().toLowerCase()).filter(Boolean))],
+    sessionDays: input?.sessionDays && input.sessionDays > 0 ? input.sessionDays : 30,
+    googleClientId: input?.googleClientId || "",
+    googleClientSecret: input?.googleClientSecret || ""
+  };
+}
+
+async function handleDashboardAuthRoute(
+  repo: AssistantRepository,
+  auth: DashboardAuthConfig,
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  url: URL,
+  origin: string,
+  dashboardUser: DashboardUser | null
+): Promise<boolean> {
+  if (url.pathname === "/login" && request.method === "GET") {
+    sendLoginPage(response, {
+      origin,
+      user: dashboardUser,
+      error: url.searchParams.get("error") || "",
+      hasGoogleCredentials: hasGoogleLoginCredentials(getGoogleLoginConfig(repo, auth))
+    });
+    return true;
+  }
+
+  if (url.pathname === "/auth/google" && request.method === "GET") {
+    try {
+      const state = crypto.randomBytes(18).toString("hex");
+      const authUrl = buildGoogleLoginAuthUrl(getGoogleLoginConfig(repo, auth), googleLoginRedirectUri(origin), state);
+      appendSetCookie(response, cookie("pa_oauth_state", state, { maxAgeSeconds: 10 * 60, httpOnly: true, secure: isSecureRequest(request, origin) }));
+      redirect(response, authUrl);
+    } catch (error) {
+      redirect(response, `/login?error=${encodeURIComponent(error instanceof Error ? error.message : "Google 登入設定錯誤")}`);
+    }
+    return true;
+  }
+
+  if (url.pathname === "/oauth/google-login/callback" && request.method === "GET") {
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    const expectedState = cookieValue(request, "pa_oauth_state");
+    appendSetCookie(response, clearCookie("pa_oauth_state"));
+    if (!code || !state || !expectedState || state !== expectedState) {
+      redirect(response, `/login?error=${encodeURIComponent("Google 登入 state 不一致，請重新登入。")}`);
+      return true;
+    }
+
+    try {
+      const accessToken = await exchangeGoogleLoginCode(getGoogleLoginConfig(repo, auth), code, googleLoginRedirectUri(origin));
+      const profile = await fetchGoogleUserProfile(accessToken);
+      if (!profile.emailVerified) {
+        throw new Error("Google email 尚未驗證，不能登入。");
+      }
+      let user = repo.getDashboardUserByEmail(profile.email);
+      if (!user && auth.adminEmails.includes(profile.email)) {
+        user = repo.upsertDashboardUser({ email: profile.email, name: profile.name, role: "admin", status: "active" });
+      }
+      if (!user) {
+        throw new Error("此 Google 帳號未被加入後台用戶。請先由管理員加入。");
+      }
+      if (user.status !== "active") {
+        throw new Error("此後台用戶已停用。");
+      }
+      if (profile.name && profile.name !== user.name) {
+        user = repo.updateDashboardUser(user.id, { name: profile.name });
+      }
+      repo.markDashboardUserLogin(user.id);
+      const token = crypto.randomBytes(32).toString("base64url");
+      const expiresAt = new Date(Date.now() + auth.sessionDays * 24 * 60 * 60 * 1000).toISOString();
+      repo.createDashboardSession({ tokenHash: sessionTokenHash(token), userId: user.id, expiresAt });
+      appendSetCookie(response, cookie("pa_session", token, { maxAgeSeconds: auth.sessionDays * 24 * 60 * 60, httpOnly: true, secure: isSecureRequest(request, origin) }));
+      redirect(response, "/");
+    } catch (error) {
+      redirect(response, `/login?error=${encodeURIComponent(error instanceof Error ? error.message : "Google 登入失敗")}`);
+    }
+    return true;
+  }
+
+  if (url.pathname === "/logout" && (request.method === "GET" || request.method === "POST")) {
+    const token = cookieValue(request, "pa_session");
+    if (token) {
+      repo.deleteDashboardSession(sessionTokenHash(token));
+    }
+    appendSetCookie(response, clearCookie("pa_session"));
+    redirect(response, "/login");
+    return true;
+  }
+
+  return false;
+}
+
+function currentDashboardUser(repo: AssistantRepository, request: http.IncomingMessage): DashboardUser | null {
+  const token = cookieValue(request, "pa_session");
+  if (!token) {
+    return null;
+  }
+  const session = repo.getDashboardSession(sessionTokenHash(token));
+  if (!session || session.user.status !== "active") {
+    return null;
+  }
+  return session.user;
+}
+
+function getGoogleLoginConfig(repo: AssistantRepository, auth: DashboardAuthConfig): GoogleLoginConfig {
+  return {
+    clientId: auth.googleClientId || repo.getSetting("google_calendar_client_id"),
+    clientSecret: auth.googleClientSecret || repo.getSetting("google_calendar_client_secret")
+  };
+}
+
+function googleLoginRedirectUri(origin: string): string {
+  return `${origin.replace(/\/$/, "")}/oauth/google-login/callback`;
+}
+
+function rejectUnauthenticated(request: http.IncomingMessage, response: http.ServerResponse, url: URL): void {
+  if (url.pathname.startsWith("/api/")) {
+    sendJson(response, { error: "請先用 Google 登入。" }, 401);
+    return;
+  }
+  if (request.method === "GET") {
+    redirect(response, `/login?next=${encodeURIComponent(url.pathname)}`);
+    return;
+  }
+  sendJson(response, { error: "請先用 Google 登入。" }, 401);
+}
+
+function publicDashboardUser(user: DashboardUser) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    status: user.status,
+    lastLoginAt: user.lastLoginAt,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  };
+}
+
 function sendJson(response: http.ServerResponse, payload: unknown, status = 200): void {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   response.end(JSON.stringify(payload));
@@ -506,6 +741,105 @@ function sendHtml(response: http.ServerResponse, title: string, message: string,
   response.end(
     `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui,sans-serif;padding:40px;line-height:1.5;color:#243149;background:#f6f8fc}main{max-width:680px;margin:auto;padding:28px;border:1px solid #d8e0ec;border-radius:12px;background:white}</style></head><body><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></main></body></html>`
   );
+}
+
+function sendLoginPage(
+  response: http.ServerResponse,
+  input: { origin: string; user: DashboardUser | null; error: string; hasGoogleCredentials: boolean }
+): void {
+  const loginUri = googleLoginRedirectUri(input.origin);
+  const calendarUri = `${input.origin.replace(/\/$/, "")}/oauth/google-calendar/callback`;
+  const credentialNote = input.hasGoogleCredentials
+    ? "OAuth 憑證已找到，可以用 Google 登入。"
+    : "尚未設定 Google OAuth Client ID / Secret。請先在 .env 設 GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET，或在未啟用登入前於日曆設定儲存。";
+  response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+  response.end(`<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>登入個人排程助理</title>
+    <style>
+      :root{color-scheme:light;--text:#243149;--muted:#68758a;--line:#d9e2ef;--accent:#4da7aa}
+      *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,#f8fbff,#eef7f3);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text)}
+      main{width:min(720px,calc(100vw - 32px));padding:34px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.88);box-shadow:0 24px 70px rgba(72,91,125,.14)}
+      h1{margin:0 0 10px;font-size:34px;letter-spacing:0}p{margin:0;color:var(--muted);line-height:1.55}.actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:26px 0 18px}
+      a.button{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:0 18px;border:1px solid rgba(77,167,170,.35);border-radius:10px;background:var(--accent);color:white;text-decoration:none;font-weight:800}
+      .error{margin-top:16px;padding:12px 14px;border:1px solid rgba(213,83,91,.28);border-radius:10px;background:#fff5f5;color:#b74750;font-weight:700}
+      .note{display:grid;gap:8px;margin-top:18px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fbfdff}.note code{color:#2d6f73;word-break:break-all}
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>Personal Assistant</p>
+      <h1>用 Google 登入</h1>
+      <p>只有已加入後台用戶的 Google 帳號可以進入你的個人排程助理。</p>
+      ${input.error ? `<div class="error">${escapeHtml(input.error)}</div>` : ""}
+      ${input.user ? `<div class="error">你已登入：${escapeHtml(input.user.email)}。<a href="/" style="color:inherit">返回 Dashboard</a></div>` : ""}
+      <div class="actions"><a class="button" href="/auth/google">以 Google 繼續</a><a href="/logout">登出現有 session</a></div>
+      <div class="note">
+        <strong>OAuth 設定</strong>
+        <p>${escapeHtml(credentialNote)}</p>
+        <p>Google Login Redirect URI：<code>${escapeHtml(loginUri)}</code></p>
+        <p>Google Calendar Redirect URI：<code>${escapeHtml(calendarUri)}</code></p>
+      </div>
+    </main>
+  </body>
+</html>`);
+}
+
+function redirect(response: http.ServerResponse, location: string): void {
+  response.writeHead(302, { Location: location, "Cache-Control": "no-store" });
+  response.end();
+}
+
+function cookie(
+  name: string,
+  value: string,
+  options: { maxAgeSeconds: number; httpOnly?: boolean; secure?: boolean }
+): string {
+  return [
+    `${name}=${encodeURIComponent(value)}`,
+    "Path=/",
+    `Max-Age=${Math.max(0, options.maxAgeSeconds)}`,
+    "SameSite=Lax",
+    options.httpOnly ? "HttpOnly" : "",
+    options.secure ? "Secure" : ""
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+function clearCookie(name: string): string {
+  return `${name}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly`;
+}
+
+function appendSetCookie(response: http.ServerResponse, value: string): void {
+  const current = response.getHeader("Set-Cookie");
+  if (!current) {
+    response.setHeader("Set-Cookie", value);
+    return;
+  }
+  response.setHeader("Set-Cookie", Array.isArray(current) ? [...current.map(String), value] : [String(current), value]);
+}
+
+function cookieValue(request: http.IncomingMessage, name: string): string {
+  const raw = request.headers.cookie || "";
+  for (const part of raw.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) {
+      return decodeURIComponent(rest.join("="));
+    }
+  }
+  return "";
+}
+
+function sessionTokenHash(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function isSecureRequest(request: http.IncomingMessage, origin: string): boolean {
+  return origin.startsWith("https://") || request.headers["x-forwarded-proto"] === "https";
 }
 
 async function readJson(request: http.IncomingMessage): Promise<unknown> {
@@ -600,7 +934,10 @@ function calendarEventsToBusyBlocks(events: CalendarEvent[]): BusyBlock[] {
   }));
 }
 
-function requestOrigin(request: http.IncomingMessage): string {
+function requestOrigin(request: http.IncomingMessage, publicOrigin = ""): string {
+  if (publicOrigin) {
+    return publicOrigin.replace(/\/$/, "");
+  }
   const proto = request.headers["x-forwarded-proto"] || "http";
   return `${proto}://${request.headers.host || "localhost:8787"}`;
 }

@@ -9,9 +9,25 @@ import { createAppleReminderAutoSync } from "./autoSync.js";
 
 const config = loadConfig();
 const repo = new AssistantRepository(config.databasePath);
+repo.ensureDashboardAdminUsers(config.dashboardAdminEmails);
+if (config.googleOAuthClientId && !repo.getSetting("google_calendar_client_id")) {
+  repo.saveSetting("google_calendar_client_id", config.googleOAuthClientId);
+}
+if (config.googleOAuthClientSecret && !repo.getSetting("google_calendar_client_secret")) {
+  repo.saveSetting("google_calendar_client_secret", config.googleOAuthClientSecret);
+}
 const minimax = new MiniMaxClient(config);
 const bot = createAssistantBot({ config, repo, minimax });
-const dashboard = startDashboardServer(repo, config.dashboardPort, minimax);
+const dashboard = startDashboardServer(repo, config.dashboardPort, minimax, {
+  auth: {
+    enabled: config.dashboardAuthEnabled,
+    publicOrigin: config.dashboardPublicOrigin,
+    adminEmails: config.dashboardAdminEmails,
+    sessionDays: config.dashboardSessionDays,
+    googleClientId: config.googleOAuthClientId,
+    googleClientSecret: config.googleOAuthClientSecret
+  }
+});
 const runAppleReminderAutoSync = createAppleReminderAutoSync(repo, {
   enabled: config.appleReminderSyncEnabled,
   intervalMinutes: config.appleReminderSyncIntervalMinutes,
@@ -38,6 +54,7 @@ cron.schedule("* * * * *", () => {
 bot.launch().then(() => {
   console.log("Assistant bot is running.");
   console.log(`Dashboard is running at http://localhost:${config.dashboardPort}`);
+  console.log(`Dashboard auth is ${config.dashboardAuthEnabled ? "enabled" : "disabled"}.`);
   runAppleReminderAutoSync();
 });
 

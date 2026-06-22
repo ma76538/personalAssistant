@@ -15,6 +15,12 @@ export type AppConfig = {
   appleReminderSyncIntervalMinutes: number;
   appleReminderSyncListName: string;
   calendarAccountEmail: string;
+  dashboardAuthEnabled: boolean;
+  dashboardPublicOrigin: string;
+  dashboardAdminEmails: string[];
+  dashboardSessionDays: number;
+  googleOAuthClientId: string;
+  googleOAuthClientSecret: string;
 };
 
 function required(name: string): string {
@@ -28,6 +34,8 @@ function required(name: string): string {
 export function loadConfig(): AppConfig {
   const databasePath = process.env.DATABASE_PATH || "./data/assistant.sqlite";
   const syncInterval = Number(process.env.APPLE_REMINDER_SYNC_INTERVAL_MINUTES || 5);
+  const calendarAccountEmail = process.env.CALENDAR_ACCOUNT_EMAIL || "kevin@region.mo";
+  const sessionDays = Number(process.env.DASHBOARD_SESSION_DAYS || 30);
 
   return {
     telegramBotToken: required("TELEGRAM_BOT_TOKEN"),
@@ -42,6 +50,19 @@ export function loadConfig(): AppConfig {
     appleReminderSyncEnabled: process.env.APPLE_REMINDER_SYNC_ENABLED !== "false",
     appleReminderSyncIntervalMinutes: Number.isFinite(syncInterval) && syncInterval > 0 ? syncInterval : 5,
     appleReminderSyncListName: process.env.APPLE_REMINDER_SYNC_LIST_NAME || "全部",
-    calendarAccountEmail: process.env.CALENDAR_ACCOUNT_EMAIL || "kevin@region.mo"
+    calendarAccountEmail,
+    dashboardAuthEnabled: process.env.DASHBOARD_AUTH_ENABLED === "true",
+    dashboardPublicOrigin: process.env.DASHBOARD_PUBLIC_ORIGIN || "",
+    dashboardAdminEmails: csv(process.env.DASHBOARD_ADMIN_EMAILS || calendarAccountEmail),
+    dashboardSessionDays: Number.isFinite(sessionDays) && sessionDays > 0 ? sessionDays : 30,
+    googleOAuthClientId: process.env.GOOGLE_OAUTH_CLIENT_ID || "",
+    googleOAuthClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || ""
   };
+}
+
+function csv(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
 }

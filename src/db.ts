@@ -4,6 +4,10 @@ import Database from "better-sqlite3";
 import {
   DEFAULT_REMINDER_POLICY,
   DeadlineType,
+  DashboardSession,
+  DashboardUser,
+  DashboardUserRole,
+  DashboardUserStatus,
   DEFAULT_WORK_SETTINGS,
   PendingAction,
   PendingActionSchema,
@@ -92,6 +96,25 @@ export class AssistantRepository {
         updated_at TEXT NOT NULL,
         FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS dashboard_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL UNIQUE,
+        name TEXT,
+        role TEXT NOT NULL DEFAULT 'user',
+        status TEXT NOT NULL DEFAULT 'active',
+        last_login_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS dashboard_sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES dashboard_users(id) ON DELETE CASCADE
+      );
     `);
     this.ensureColumn("tasks", "source", "TEXT");
     this.ensureColumn("tasks", "source_id", "TEXT");
@@ -106,6 +129,7 @@ export class AssistantRepository {
     this.ensureColumn("tasks", "weekly_target_minutes", "INTEGER");
     this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_source ON tasks (source, source_id) WHERE source IS NOT NULL AND source_id IS NOT NULL");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_task_subtasks_task ON task_subtasks (task_id, sort_order, id)");
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_dashboard_sessions_user ON dashboard_sessions (user_id, expires_at)");
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -638,6 +662,137 @@ export class AssistantRepository {
     return value;
   }
 
+  ensureDashboardAdminUsers(emails: string[]): DashboardUser[] {
+    return emails.map((email) =>
+      this.upsertDashboardUser({
+        email,
+        role: "admin",
+        status: "active"
+      })
+    );
+  }
+
+  listDashboardUsers(): DashboardUser[] {
+    return this.db
+      .prepare("SELECT * FROM dashboard_users ORDER BY role = 'admin' DESC, status = 'active' DESC, email ASC")
+      .all()
+      .map((row) => this.mapDashboardUser(row as Record<string, unknown>));
+  }
+
+  getDashboardUser(id: number): DashboardUser | null {
+    const row = this.db.prepare("SELECT * FROM dashboard_users WHERE id = ?").get(id);
+    return row ? this.mapDashboardUser(row as Record<string, unknown>) : null;
+  }
+
+  getDashboardUserByEmail(email: string): DashboardUser | null {
+    const normalized = normalizeEmail(email);
+    const row = this.db.prepare("SELECT * FROM dashboard_users WHERE email = ?").get(normalized);
+    return row ? this.mapDashboardUser(row as Record<string, unknown>) : null;
+  }
+
+  upsertDashboardUser(input: {
+    email: string;
+    name?: string | null;
+    role?: DashboardUserRole;
+    status?: DashboardUserStatus;
+  }): DashboardUser {
+    const timestamp = nowIso();
+    const normalized = normalizeEmail(input.email);
+    this.db
+      .prepare(
+        `INSERT INTO dashboard_users (email, name, role, status, created_at, updated_at)
+         VALUES (@email, @name, @role, @status, @createdAt, @updatedAt)
+         ON CONFLICT(email) DO UPDATE SET
+           name = COALESCE(excluded.name, dashboard_users.name),
+           role = excluded.role,
+           status = excluded.status,
+           updated_at = excluded.updated_at`
+      )
+      .run({
+        email: normalized,
+        name: input.name ?? null,
+        role: input.role ?? "user",
+        status: input.status ?? "active",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+    return this.getDashboardUserByEmail(normalized)!;
+  }
+
+  updateDashboardUser(
+    id: number,
+    patch: Partial<Pick<DashboardUser, "name" | "role" | "status">>
+  ): DashboardUser {
+    const current = this.getDashboardUser(id);
+    if (!current) {
+      throw new Error(`Dashboard user ${id} not found`);
+    }
+    const next = { ...current, ...patch, updatedAt: nowIso() };
+    this.db
+      .prepare(
+        `UPDATE dashboard_users SET
+          name = @name,
+          role = @role,
+          status = @status,
+          updated_at = @updatedAt
+         WHERE id = @id`
+      )
+      .run(next);
+    return this.getDashboardUser(id)!;
+  }
+
+  markDashboardUserLogin(id: number): void {
+    this.db.prepare("UPDATE dashboard_users SET last_login_at = ?, updated_at = ? WHERE id = ?").run(nowIso(), nowIso(), id);
+  }
+
+  createDashboardSession(input: { tokenHash: string; userId: number; expiresAt: string }): void {
+    this.deleteExpiredDashboardSessions();
+    this.db
+      .prepare("INSERT INTO dashboard_sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)")
+      .run(input.tokenHash, input.userId, input.expiresAt, nowIso());
+  }
+
+  getDashboardSession(tokenHash: string): DashboardSession | null {
+    const row = this.db
+      .prepare(
+        `SELECT
+          s.token_hash,
+          s.user_id,
+          s.expires_at,
+          s.created_at,
+          u.id AS user_id_value,
+          u.email,
+          u.name,
+          u.role,
+          u.status,
+          u.last_login_at,
+          u.created_at AS user_created_at,
+          u.updated_at AS user_updated_at
+         FROM dashboard_sessions s
+         JOIN dashboard_users u ON u.id = s.user_id
+         WHERE s.token_hash = ?`
+      )
+      .get(tokenHash) as Record<string, unknown> | undefined;
+    if (!row) {
+      return null;
+    }
+    const session = this.mapDashboardSession(row);
+    if (new Date(session.expiresAt).getTime() <= Date.now()) {
+      this.deleteDashboardSession(tokenHash);
+      return null;
+    }
+    return session;
+  }
+
+  deleteDashboardSession(tokenHash: string): void {
+    this.db.prepare("DELETE FROM dashboard_sessions WHERE token_hash = ?").run(tokenHash);
+  }
+
+  deleteExpiredDashboardSessions(): number {
+    const result = this.db.prepare("DELETE FROM dashboard_sessions WHERE expires_at <= ?").run(nowIso());
+    return result.changes;
+  }
+
   private mapTask(row: Record<string, unknown>): Task {
     return {
       id: Number(row.id),
@@ -682,6 +837,38 @@ export class AssistantRepository {
     };
   }
 
+  private mapDashboardUser(row: Record<string, unknown>): DashboardUser {
+    return {
+      id: Number(row.id ?? row.user_id_value),
+      email: String(row.email),
+      name: row.name ? String(row.name) : null,
+      role: String(row.role || "user") as DashboardUserRole,
+      status: String(row.status || "active") as DashboardUserStatus,
+      lastLoginAt: row.last_login_at ? String(row.last_login_at) : null,
+      createdAt: String(row.created_at ?? row.user_created_at),
+      updatedAt: String(row.updated_at ?? row.user_updated_at)
+    };
+  }
+
+  private mapDashboardSession(row: Record<string, unknown>): DashboardSession {
+    return {
+      tokenHash: String(row.token_hash),
+      userId: Number(row.user_id),
+      expiresAt: String(row.expires_at),
+      createdAt: String(row.created_at),
+      user: this.mapDashboardUser({
+        id: row.user_id_value,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        status: row.status,
+        last_login_at: row.last_login_at,
+        created_at: row.user_created_at,
+        updated_at: row.user_updated_at
+      })
+    };
+  }
+
   private nextOpenSubtask(taskId: number): TaskSubtask | null {
     const row = this.db
       .prepare("SELECT * FROM task_subtasks WHERE task_id = ? AND status != 'done' ORDER BY sort_order ASC, id ASC LIMIT 1")
@@ -692,6 +879,10 @@ export class AssistantRepository {
   private touchTask(taskId: number): void {
     this.db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(nowIso(), taskId);
   }
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 function summarizeSubtasks(subtasks: TaskSubtask[]): TaskSubtaskSummary {

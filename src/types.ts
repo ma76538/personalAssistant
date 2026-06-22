@@ -97,6 +97,31 @@ export type TaskSubtaskSummary = {
   next: TaskSubtask | null;
 };
 
+export const DashboardUserRoleSchema = z.enum(["admin", "user"]);
+export type DashboardUserRole = z.infer<typeof DashboardUserRoleSchema>;
+
+export const DashboardUserStatusSchema = z.enum(["active", "disabled"]);
+export type DashboardUserStatus = z.infer<typeof DashboardUserStatusSchema>;
+
+export type DashboardUser = {
+  id: number;
+  email: string;
+  name: string | null;
+  role: DashboardUserRole;
+  status: DashboardUserStatus;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DashboardSession = {
+  tokenHash: string;
+  userId: number;
+  expiresAt: string;
+  createdAt: string;
+  user: DashboardUser;
+};
+
 export const TaskTriageResultSchema = z.object({
   valueScore: z.number().int().min(1).max(5),
   deadlineType: DeadlineTypeSchema,

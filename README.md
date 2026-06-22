@@ -29,6 +29,26 @@ npm run dev
 
 `http://127.0.0.1:8787`
 
+## Web Dashboard Login
+
+本機開發預設不需要登入。要把 Dashboard 放上網時，請在 `.env` 啟用 Google OAuth 登入：
+
+```bash
+DASHBOARD_AUTH_ENABLED=true
+DASHBOARD_PUBLIC_ORIGIN=https://你的公開網址
+DASHBOARD_ADMIN_EMAILS=kevin@region.mo
+GOOGLE_OAUTH_CLIENT_ID=...
+GOOGLE_OAUTH_CLIENT_SECRET=...
+CALENDAR_ACCOUNT_EMAIL=kevin@region.mo
+```
+
+Google OAuth Client 需要加入兩個 Redirect URI：
+
+- `https://你的公開網址/oauth/google-login/callback`
+- `https://你的公開網址/oauth/google-calendar/callback`
+
+登入後可在 Dashboard 的「用戶管理」加入或停用其他 Google 帳號。「日曆設定」會用同一套 OAuth 憑證連接 Google Calendar read-only。
+
 Telegram bot username：
 
 `@fatcow_personal_assistant_bot`

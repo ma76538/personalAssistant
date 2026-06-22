@@ -1,17 +1,18 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AddressInfo } from "node:net";
 import { AssistantRepository } from "../src/db.js";
-import { startDashboardServer } from "../src/dashboard.js";
+import { DashboardServerOptions, startDashboardServer } from "../src/dashboard.js";
 
 let cleanup: (() => void) | null = null;
 
-function createHarness() {
+function createHarness(options?: DashboardServerOptions) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "assistant-dashboard-"));
   const repo = new AssistantRepository(path.join(dir, "test.sqlite"));
-  const server = startDashboardServer(repo, 0);
+  const server = startDashboardServer(repo, 0, undefined, options);
   const address = server.address() as AddressInfo;
   cleanup = () => {
     server.close();
@@ -26,6 +27,57 @@ afterEach(() => {
 });
 
 describe("dashboard API", () => {
+  it("protects dashboard APIs with Google auth and lets admins manage users", async () => {
+    const { repo, baseUrl } = createHarness({
+      auth: {
+        enabled: true,
+        adminEmails: ["admin@example.com"],
+        googleClientId: "client-id",
+        googleClientSecret: "client-secret"
+      }
+    });
+
+    const blockedResponse = await fetch(`${baseUrl}/api/summary`);
+    expect(blockedResponse.status).toBe(401);
+
+    const authUrlResponse = await fetch(`${baseUrl}/auth/google`, { redirect: "manual" });
+    expect(authUrlResponse.status).toBe(302);
+    expect(authUrlResponse.headers.get("location")).toContain("https://accounts.google.com/o/oauth2/v2/auth");
+    expect(authUrlResponse.headers.get("set-cookie")).toContain("pa_oauth_state");
+
+    const admin = repo.getDashboardUserByEmail("admin@example.com")!;
+    const token = "test-session-token";
+    repo.createDashboardSession({
+      tokenHash: crypto.createHash("sha256").update(token).digest("hex"),
+      userId: admin.id,
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString()
+    });
+    const cookie = { Cookie: `pa_session=${encodeURIComponent(token)}` };
+
+    const meResponse = await fetch(`${baseUrl}/api/me`, { headers: cookie });
+    expect(meResponse.status).toBe(200);
+    const me = (await meResponse.json()) as { user: { email: string; role: string } };
+    expect(me.user.email).toBe("admin@example.com");
+    expect(me.user.role).toBe("admin");
+
+    const createUserResponse = await fetch(`${baseUrl}/api/admin/users`, {
+      method: "POST",
+      headers: { ...cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "user@example.com", role: "user", status: "active" })
+    });
+    expect(createUserResponse.status).toBe(201);
+    expect(repo.getDashboardUserByEmail("user@example.com")?.status).toBe("active");
+
+    const created = (await createUserResponse.json()) as { user: { id: number } };
+    const disableResponse = await fetch(`${baseUrl}/api/admin/users/${created.user.id}`, {
+      method: "PATCH",
+      headers: { ...cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "disabled" })
+    });
+    expect(disableResponse.status).toBe(200);
+    expect(repo.getDashboardUserByEmail("user@example.com")?.status).toBe("disabled");
+  });
+
   it("serves and updates reminder settings", async () => {
     const { repo, baseUrl } = createHarness();
 

@@ -96,6 +96,19 @@
 .calendar-settings-grid{grid-template-columns:repeat(2,minmax(220px,1fr))}
 .calendar-oauth-note{grid-column:1/-1}
 @media(max-width:900px){.calendar-settings-grid{grid-template-columns:1fr}.calendar-oauth-note{grid-column:auto}}
+.user-admin-panel{margin:12px 0;border-color:rgba(77,167,170,.22);background:rgba(248,252,252,.9)}
+.logout-link{display:inline-flex;align-items:center;min-height:34px;padding:0 12px;border:1px solid rgba(125,145,174,.24);border-radius:8px;background:rgba(255,255,255,.68);color:#52627b;text-decoration:none;font-weight:800}
+.user-admin-form{display:grid;grid-template-columns:minmax(220px,1fr) minmax(140px,180px) auto;gap:10px;align-items:end;margin-bottom:12px}
+.user-admin-form label{display:grid;gap:6px;color:#324058;font-weight:800}
+.user-admin-form input,.user-admin-form select{min-height:40px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text);padding:8px}
+.user-admin-form button,.dashboard-user-actions button{height:40px;padding:0 12px;border-color:rgba(77,167,170,.34);background:rgba(77,167,170,.12);color:#287174;font-weight:800}
+.dashboard-users-list{display:grid;gap:8px}
+.dashboard-user-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:11px 12px;border:1px solid rgba(125,145,174,.2);border-radius:8px;background:rgba(255,255,255,.76)}
+.dashboard-user-row strong{display:block;color:#26334c}
+.dashboard-user-row small{display:block;margin-top:3px;color:#7b889b}
+.dashboard-user-row.disabled{opacity:.58}
+.dashboard-user-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+@media(max-width:760px){.user-admin-form,.dashboard-user-row{grid-template-columns:1fr}.dashboard-user-actions{justify-content:flex-start}}
 
 .compact-focus{display:block;margin:0 0 14px;padding:18px;border-color:rgba(77,167,170,.32);background:linear-gradient(135deg,rgba(244,251,250,.96),rgba(255,255,255,.9))}
 .compact-focus .panel-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 14px;min-width:0}

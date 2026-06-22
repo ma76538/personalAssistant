@@ -1,4 +1,4 @@
-const state = { tasks: [], summary: null, calendarSettings: null, workSettings: null, search: "" };
+const state = { tasks: [], summary: null, calendarSettings: null, workSettings: null, me: null, dashboardUsers: [], search: "" };
 const $ = (id) => document.getElementById(id);
 
 const matrixEl = $("matrix");
@@ -27,6 +27,8 @@ const drawerTitleEl = $("drawer-title");
 const reminderSettingsFormEl = $("reminder-settings-form");
 const reminderSettingsStatusEl = $("reminder-settings-status");
 const calendarSettingsStatusEl = $("calendar-settings-status");
+const userAdminStatusEl = $("user-admin-status");
+const dashboardUsersListEl = $("dashboard-users-list");
 const workCapacityStatusEl = $("work-capacity-status");
 const pendingReviewStatusEl = $("pending-review-status");
 const appShellEl = document.querySelector(".app-shell");
@@ -44,6 +46,7 @@ const DASHBOARD_SECTION_META = {
   gantt: { icon: "▤", label: "甘特圖" },
   calendar: { icon: "◴", label: "日曆" },
   "calendar-settings": { icon: "⚙", label: "日曆設定" },
+  "user-admin": { icon: "◎", label: "用戶管理" },
   "completed-bin": { icon: "☑", label: "完成箱" }
 };
 const DASHBOARD_SECTION_IDS = Object.keys(DASHBOARD_SECTION_META);
@@ -72,6 +75,8 @@ subtaskListEl?.addEventListener("click", handleSubtaskDeleteClick);
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
 $("connect-google-calendar")?.addEventListener("click", connectGoogleCalendar);
+$("add-dashboard-user")?.addEventListener("click", addDashboardUser);
+dashboardUsersListEl?.addEventListener("click", handleDashboardUserClick);
 $("save-work-capacity")?.addEventListener("click", saveWorkCapacity);
 $("run-pending-review")?.addEventListener("click", runPendingReview);
 reminderSettingsFormEl?.addEventListener("input", scheduleReminderSettingsSave);
@@ -417,16 +422,28 @@ async function handlePointerDragEnd(event) {
 }
 
 async function loadDashboard() {
-  const [summaryResponse, tasksResponse, calendarSettingsResponse, workSettingsResponse] = await Promise.all([
+  const [summaryResponse, tasksResponse, calendarSettingsResponse, workSettingsResponse, meResponse] = await Promise.all([
     fetch("/api/summary"),
     fetch("/api/tasks"),
     fetch("/api/calendar-settings"),
-    fetch("/api/work-capacity")
+    fetch("/api/work-capacity"),
+    fetch("/api/me")
   ]);
+  if ([summaryResponse, tasksResponse, calendarSettingsResponse, workSettingsResponse, meResponse].some((response) => response.status === 401)) {
+    window.location.href = "/login";
+    return;
+  }
   state.summary = await summaryResponse.json();
   state.tasks = (await tasksResponse.json()).tasks;
   state.calendarSettings = await calendarSettingsResponse.json();
   state.workSettings = await workSettingsResponse.json();
+  state.me = await meResponse.json();
+  if (state.me?.user?.role === "admin") {
+    const usersResponse = await fetch("/api/admin/users");
+    state.dashboardUsers = usersResponse.ok ? (await usersResponse.json()).users || [] : [];
+  } else {
+    state.dashboardUsers = [];
+  }
   render();
 }
 
@@ -440,6 +457,7 @@ function render() {
   renderCompletedBin();
   renderFocusList();
   renderCalendarSettings();
+  renderUserAdmin();
   renderWorkSettings();
   lastUpdatedEl.textContent = `更新於 ${new Intl.DateTimeFormat("zh-Hant", {
     hour: "2-digit",
@@ -800,6 +818,70 @@ function renderCalendarSettings() {
   }
 }
 
+function renderUserAdmin() {
+  const panel = $("user-admin");
+  if (!panel || !userAdminStatusEl || !dashboardUsersListEl) return;
+  const me = state.me;
+  if (!me?.authEnabled) {
+    userAdminStatusEl.textContent = "本機模式：尚未啟用 Google 登入。上網部署時請設定 DASHBOARD_AUTH_ENABLED=true。";
+  } else {
+    userAdminStatusEl.textContent = `已登入：${me.user?.email || "unknown"}｜${me.user?.role === "admin" ? "管理員" : "一般用戶"}`;
+  }
+  const canAdmin = me?.user?.role === "admin";
+  panel.querySelector(".user-admin-form")?.toggleAttribute("hidden", !canAdmin);
+  if (!canAdmin) {
+    dashboardUsersListEl.innerHTML = `<div class="drop-empty">只有管理員可以查看及新增後台用戶。</div>`;
+    return;
+  }
+  dashboardUsersListEl.innerHTML = state.dashboardUsers.length
+    ? state.dashboardUsers.map(dashboardUserRow).join("")
+    : `<div class="drop-empty">未有用戶。請先加入可登入的 Google 帳號。</div>`;
+}
+
+function dashboardUserRow(user) {
+  const disabled = user.status !== "active";
+  const lastLogin = user.lastLoginAt ? shortDate(user.lastLoginAt) : "未登入";
+  return `<article class="dashboard-user-row ${disabled ? "disabled" : ""}">
+    <div>
+      <strong>${esc(user.email)}</strong>
+      <small>${esc(user.name || "未命名")}｜${user.role === "admin" ? "管理員" : "一般用戶"}｜最後登入 ${lastLogin}</small>
+    </div>
+    <div class="dashboard-user-actions">
+      <button data-user-action="role" data-role="${user.role === "admin" ? "user" : "admin"}" data-id="${user.id}" type="button">${user.role === "admin" ? "改一般" : "改管理員"}</button>
+      <button data-user-action="status" data-status="${disabled ? "active" : "disabled"}" data-id="${user.id}" type="button">${disabled ? "啟用" : "停用"}</button>
+    </div>
+  </article>`;
+}
+
+async function addDashboardUser() {
+  const email = $("new-user-email")?.value.trim();
+  const role = $("new-user-role")?.value || "user";
+  if (!email) {
+    $("new-user-email")?.focus();
+    return;
+  }
+  try {
+    await requestJson("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify({ email, role, status: "active" })
+    });
+    $("new-user-email").value = "";
+    await loadDashboard();
+    userAdminStatusEl.textContent = `已加入 ${email}`;
+  } catch (error) {
+    userAdminStatusEl.textContent = error instanceof Error ? `加入失敗：${error.message}` : "加入失敗";
+  }
+}
+
+async function handleDashboardUserClick(event) {
+  const button = event.target.closest("button");
+  if (!button?.dataset.userAction) return;
+  const id = Number(button.dataset.id);
+  const body = button.dataset.userAction === "role" ? { role: button.dataset.role } : { status: button.dataset.status };
+  await requestJson(`/api/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+  await loadDashboard();
+}
+
 function renderWorkSettings() {
   const settings = state.workSettings || state.summary?.workSettings;
   if (!settings) return;
@@ -1123,6 +1205,10 @@ function reminderSettingsPayload() {
 async function requestJson(url, options = {}) {
   const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
   const payload = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    window.location.href = "/login";
+    throw new Error("請先登入");
+  }
   if (!response.ok) throw new Error(payload.error || "操作失敗");
   return payload;
 }
