@@ -7,6 +7,7 @@ export function formatTask(task: Task): string {
 時間：${formatDateTime(task.scheduledStart)} - ${formatDateTime(task.scheduledEnd)}
 工時：${task.durationMinutes} 分鐘｜優先：${task.priority}｜能量：${task.energy}
 期限：${formatDateTime(task.deadline)}
+下次跟進：${formatDateTime(task.nextReviewAt)}
 狀態：${task.status}`;
 }
 

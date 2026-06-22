@@ -61,13 +61,17 @@ function parseTaskLines(text: string): ParsedTask[] {
 }
 
 function parseTaskLine(text: string): ParsedTask {
+  const nextReviewAt = parseNextReview(text);
   return {
     title: cleanupTitle(text),
     durationMinutes: parseDurationMinutes(text),
-    deadline: parseDate(text),
+    deadline: nextReviewAt ? undefined : parseDate(text),
+    nextReviewAt,
     priority: parsePriority(text),
     energy: parseEnergy(text),
-    context: parseContext(text)
+    context: parseContext(text),
+    isProject: isProjectLike(text) || Boolean(nextReviewAt),
+    deadlineType: nextReviewAt ? "none" : undefined
   };
 }
 
@@ -84,6 +88,7 @@ function cleanupTitle(text: string): string {
     .replace(/大概|約|大約/g, "")
     .replace(/\d+(\.\d+)?\s*(小時|個鐘|hours?|hrs?|分鐘|分|min)/gi, "")
     .replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, "")
+    .replace(/下次跟進|跟進日|next review|review/gi, "")
     .replace(/\b(?:today|tomorrow)\b,?\s*\d{1,2}:\d{2}/gi, "")
     .replace(/要專心|高能量|低能量|中能量|低強度|行政/g, "")
     .replace(/\s+/g, " ")
@@ -101,6 +106,17 @@ function parseDurationMinutes(text: string): number | undefined {
     return Number(minuteMatch[1]);
   }
   return undefined;
+}
+
+function parseNextReview(text: string): string | undefined {
+  if (!/(下次跟進|跟進日|next review|review)/i.test(text)) {
+    return undefined;
+  }
+  return parseDate(text);
+}
+
+function isProjectLike(text: string): boolean {
+  return /(持續|項目|計劃|计划|project|每週|每周|長期|跟進)/i.test(text);
 }
 
 function parsePriority(text: string): number | undefined {

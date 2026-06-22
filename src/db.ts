@@ -101,6 +101,9 @@ export class AssistantRepository {
     this.ensureColumn("tasks", "is_project", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("tasks", "project_id", "INTEGER");
     this.ensureColumn("tasks", "progress_note", "TEXT");
+    this.ensureColumn("tasks", "next_review_at", "TEXT");
+    this.ensureColumn("tasks", "review_cadence_days", "INTEGER");
+    this.ensureColumn("tasks", "weekly_target_minutes", "INTEGER");
     this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_source ON tasks (source, source_id) WHERE source IS NOT NULL AND source_id IS NOT NULL");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_task_subtasks_task ON task_subtasks (task_id, sort_order, id)");
   }
@@ -117,6 +120,9 @@ export class AssistantRepository {
     durationMinutes?: number;
     deadline?: string | null;
     earliestStart?: string | null;
+    nextReviewAt?: string | null;
+    reviewCadenceDays?: number | null;
+    weeklyTargetMinutes?: number | null;
     priority?: number;
     energy?: string;
     context?: string | null;
@@ -134,10 +140,12 @@ export class AssistantRepository {
       INSERT INTO tasks (
         title, duration_minutes, deadline, earliest_start, priority, energy, context,
         quadrant, value_score, deadline_type, is_project, project_id, progress_note,
+        next_review_at, review_cadence_days, weekly_target_minutes,
         source, source_id, status, created_at, updated_at
       ) VALUES (
         @title, @durationMinutes, @deadline, @earliestStart, @priority, @energy, @context,
         @quadrant, @valueScore, @deadlineType, @isProject, @projectId, @progressNote,
+        @nextReviewAt, @reviewCadenceDays, @weeklyTargetMinutes,
         @source, @sourceId, 'pending', @createdAt, @updatedAt
       )
     `);
@@ -146,6 +154,9 @@ export class AssistantRepository {
       durationMinutes: input.durationMinutes ?? 30,
       deadline: input.deadline ?? null,
       earliestStart: input.earliestStart ?? null,
+      nextReviewAt: input.nextReviewAt ?? null,
+      reviewCadenceDays: input.reviewCadenceDays ?? null,
+      weeklyTargetMinutes: input.weeklyTargetMinutes ?? null,
       priority: input.priority ?? 3,
       energy: input.energy ?? "medium",
       context: input.context ?? null,
@@ -170,6 +181,9 @@ export class AssistantRepository {
     title: string;
     durationMinutes?: number;
     deadline?: string | null;
+    nextReviewAt?: string | null;
+    reviewCadenceDays?: number | null;
+    weeklyTargetMinutes?: number | null;
     priority?: number;
     energy?: string;
     context?: string | null;
@@ -193,6 +207,9 @@ export class AssistantRepository {
       title: input.title,
       durationMinutes: input.durationMinutes ?? task.durationMinutes,
       deadline: input.deadline === undefined ? task.deadline : input.deadline,
+      nextReviewAt: input.nextReviewAt === undefined ? task.nextReviewAt : input.nextReviewAt,
+      reviewCadenceDays: input.reviewCadenceDays === undefined ? task.reviewCadenceDays : input.reviewCadenceDays,
+      weeklyTargetMinutes: input.weeklyTargetMinutes === undefined ? task.weeklyTargetMinutes : input.weeklyTargetMinutes,
       priority: input.priority ?? task.priority,
       energy: (input.energy ?? task.energy) as Task["energy"],
       context: input.context === undefined ? task.context : input.context,
@@ -402,6 +419,9 @@ export class AssistantRepository {
           duration_minutes = @durationMinutes,
           deadline = @deadline,
           earliest_start = @earliestStart,
+          next_review_at = @nextReviewAt,
+          review_cadence_days = @reviewCadenceDays,
+          weekly_target_minutes = @weeklyTargetMinutes,
           priority = @priority,
           energy = @energy,
           context = @context,
@@ -625,6 +645,9 @@ export class AssistantRepository {
       durationMinutes: Number(row.duration_minutes),
       deadline: row.deadline ? String(row.deadline) : null,
       earliestStart: row.earliest_start ? String(row.earliest_start) : null,
+      nextReviewAt: row.next_review_at ? String(row.next_review_at) : null,
+      reviewCadenceDays: row.review_cadence_days === null || row.review_cadence_days === undefined ? null : Number(row.review_cadence_days),
+      weeklyTargetMinutes: row.weekly_target_minutes === null || row.weekly_target_minutes === undefined ? null : Number(row.weekly_target_minutes),
       priority: Number(row.priority),
       energy: row.energy as Task["energy"],
       context: row.context ? String(row.context) : null,

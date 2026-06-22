@@ -79,7 +79,7 @@ reminderSettingsFormEl?.addEventListener("change", scheduleReminderSettingsSave)
 $("reset-reminder-settings")?.addEventListener("click", resetReminderSettings);
 setupSidebarToggle();
 setupSectionDragging();
-["earliestStart", "deadline"].forEach((id) => {
+["earliestStart", "deadline", "nextReviewAt"].forEach((id) => {
   const input = $(id);
   input?.addEventListener("click", () => input.showPicker?.());
 });
@@ -560,9 +560,9 @@ function prioritizeVisibleTasks(tasks) {
 
 function taskRow(task, rank) {
   const status = normalizeStatusValue(task.status);
-  const urgentMissingDue = !task.deadline;
-  const needsDue = urgentMissingDue || lastDueWarningTaskId === task.id;
+  const needsDue = needsDueDate(task) || lastDueWarningTaskId === task.id;
   const startMarkup = task.earliestStart ? `<span>Start Date ${shortDate(task.earliestStart)}</span>` : "";
+  const reviewMarkup = task.nextReviewAt ? `<span>Next Review ${shortDate(task.nextReviewAt)}</span>` : "";
   return `<article class="task-row priority-${task.priority} ${needsDue ? "needs-due" : ""}" draggable="true" data-id="${task.id}">
     <span class="priority-bar"></span>
     <span class="task-rank">${rank}</span>
@@ -570,8 +570,8 @@ function taskRow(task, rank) {
       <strong>${esc(task.title)}</strong>
       ${taskMeta(task)}
       ${subtaskPanel(task)}
-      ${startMarkup ? `<div class="task-dates">${startMarkup}</div>` : ""}
-      ${needsDue ? `<p class="due-warning">每個任務都必須加 Due Date，未補前不會自動排程。</p>` : ""}
+      ${startMarkup || reviewMarkup ? `<div class="task-dates">${startMarkup}${reviewMarkup}</div>` : ""}
+      ${needsDue ? `<p class="due-warning">${isUrgentQuadrant(task.quadrant) ? "緊急象限任務必須加 Due Date。" : "單步任務請補 Due Date；持續項目可改填 Next Review。"}</p>` : ""}
     </div>
     <div class="matrix-status-actions" aria-label="改變任務狀態">
       ${dueChip(task, needsDue)}
@@ -661,7 +661,7 @@ function renderGantt() {
 }
 
 function isGanttCandidate(task) {
-  return !["done", "cancelled"].includes(task.status) && task.durationMinutes > 2 && GANTT_QUADRANTS.has(task.quadrant);
+  return !["done", "cancelled"].includes(task.status) && task.durationMinutes > 2 && GANTT_QUADRANTS.has(task.quadrant) && hasScheduleAnchor(task);
 }
 
 function compareGanttItems(a, b) {
@@ -674,23 +674,25 @@ function compareGanttItems(a, b) {
 }
 
 function compareGanttTasks(a, b) {
-  const aDeadline = a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY;
-  const bDeadline = b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY;
-  if (aDeadline !== bDeadline) return aDeadline - bDeadline;
+  const aAnchor = scheduleAnchor(a) ? new Date(scheduleAnchor(a)).getTime() : Number.POSITIVE_INFINITY;
+  const bAnchor = scheduleAnchor(b) ? new Date(scheduleAnchor(b)).getTime() : Number.POSITIVE_INFINITY;
+  if (aAnchor !== bAnchor) return aAnchor - bAnchor;
   if ((a.valueScore ?? 3) !== (b.valueScore ?? 3)) return (b.valueScore ?? 3) - (a.valueScore ?? 3);
   return (b.priority ?? 3) - (a.priority ?? 3);
 }
 
 function ganttUnscheduledReason(task) {
-  if (!task.deadline) return "待補 Due Date 後才會自動排程";
-  if (new Date(task.deadline) < new Date()) return "Due Date 已過，請重排或更新期限";
+  if (!scheduleAnchor(task)) return "待補 Due Date 或 Next Review 後才會自動排程";
+  if (task.deadline && new Date(task.deadline) < new Date()) return "Due Date 已過，請重排或更新期限";
+  if (!task.deadline && task.nextReviewAt && new Date(task.nextReviewAt) < new Date()) return "Next Review 已到，請安排下一步";
   if (task.status === "in_progress") return "進行中，但未有時間段";
   return "未能排入目前工作容量";
 }
 
 function ganttUnscheduledLabel(task) {
-  if (!task.deadline) return "待補 Due";
-  return `Due ${shortMonthDay(task.deadline)}`;
+  if (task.deadline) return `Due ${shortMonthDay(task.deadline)}`;
+  if (task.nextReviewAt) return `跟進 ${shortMonthDay(task.nextReviewAt)}`;
+  return "待補時間";
 }
 
 function ganttLeft(date) {
@@ -712,6 +714,9 @@ function dueChip(task, needsDue = false) {
   if (task.deadline) {
     return `<button class="due-chip" data-action="edit" data-id="${task.id}" type="button" title="編輯 Due Date">${shortMonthDay(task.deadline)}</button>`;
   }
+  if (task.nextReviewAt && !needsDue) {
+    return `<button class="due-chip review" data-action="edit" data-id="${task.id}" type="button" title="編輯 Next Review">跟進 ${shortMonthDay(task.nextReviewAt)}</button>`;
+  }
   if (needsDue) {
     return `<button class="due-chip missing" data-action="edit" data-id="${task.id}" type="button" title="補回 Due Date">加 Due</button>`;
   }
@@ -722,6 +727,8 @@ function taskMeta(task) {
   const chips = [
     `<span>價值 ${task.valueScore ?? 3}</span>`,
     `<span>${deadlineTypeLabel(task.deadlineType)}</span>`,
+    task.nextReviewAt ? `<span>下次跟進 ${shortMonthDay(task.nextReviewAt)}</span>` : "",
+    task.weeklyTargetMinutes ? `<span>每週 ${task.weeklyTargetMinutes} 分鐘</span>` : "",
     task.isProject ? "<span>項目</span>" : "",
     task.projectId ? `<span>屬於 #${task.projectId}</span>` : ""
   ].filter(Boolean);
@@ -1010,9 +1017,12 @@ function openEditor(task = null) {
   $("quick-win-toggle").checked = Boolean(task && task.durationMinutes <= 2);
   $("earliestStart").value = toLocalInputValue(task?.earliestStart);
   $("deadline").value = toLocalInputValue(task?.deadline);
+  $("nextReviewAt").value = toLocalInputValue(task?.nextReviewAt);
   $("value-score").value = task?.valueScore ?? 3;
   $("deadline-type").value = task?.deadlineType ?? "none";
   $("is-project").checked = Boolean(task?.isProject);
+  $("review-cadence-days").value = task?.reviewCadenceDays ?? "";
+  $("weekly-target-minutes").value = task?.weeklyTargetMinutes ?? "";
   $("project-id").value = task?.projectId ?? "";
   $("progress-note").value = task?.progressNote ?? "";
   drawerBackdropEl.hidden = false;
@@ -1034,9 +1044,12 @@ function formPayload() {
     quadrant: $("task-quadrant").value === "pending-bucket" ? null : $("task-quadrant").value,
     earliestStart: fromLocalInputValue($("earliestStart").value),
     deadline: fromLocalInputValue($("deadline").value),
+    nextReviewAt: fromLocalInputValue($("nextReviewAt").value),
     valueScore: Number($("value-score").value),
     deadlineType: $("deadline-type").value,
     isProject: $("is-project").checked,
+    reviewCadenceDays: $("review-cadence-days").value ? Number($("review-cadence-days").value) : null,
+    weeklyTargetMinutes: $("weekly-target-minutes").value ? Number($("weekly-target-minutes").value) : null,
     projectId: $("project-id").value ? Number($("project-id").value) : null,
     progressNote: $("progress-note").value.trim() || null
   };
@@ -1144,6 +1157,24 @@ function isUrgentTask(task) {
 
 function isUrgentQuadrant(quadrant) {
   return quadrant === "urgent-important" || quadrant === "urgent-not-important";
+}
+
+function hasFollowUpAnchor(task) {
+  return Boolean(task.isProject && task.nextReviewAt);
+}
+
+function needsDueDate(task) {
+  if (task.deadline) return false;
+  if (isUrgentQuadrant(task.quadrant)) return true;
+  return !hasFollowUpAnchor(task);
+}
+
+function hasScheduleAnchor(task) {
+  return Boolean(task.deadline || hasFollowUpAnchor(task));
+}
+
+function scheduleAnchor(task) {
+  return task.deadline || (hasFollowUpAnchor(task) ? task.nextReviewAt : null);
 }
 
 function deadlineTypeLabel(type) {

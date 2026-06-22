@@ -28,4 +28,11 @@ HKSTP Incubation Program
     expect(parsed.task?.deadline).toBeDefined();
     expect(parsed.task?.title).toBe("寫論文");
   });
+
+  it("treats next review dates as follow-up anchors instead of deadlines", () => {
+    const parsed = parseFallbackAction("FDCT營養計劃 下次跟進 27/06/2026");
+    expect(parsed.task?.deadline).toBeUndefined();
+    expect(parsed.task?.nextReviewAt).toBeDefined();
+    expect(parsed.task?.isProject).toBe(true);
+  });
 });

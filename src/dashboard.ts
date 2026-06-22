@@ -369,7 +369,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         active: tasks.filter((task) => !["done", "cancelled"].includes(task.status)).length,
         done: tasks.filter((task) => task.status === "done").length,
         pendingBucket: tasks.filter((task) => !["done", "cancelled"].includes(task.status) && !task.quadrant),
-        missingDeadlines: tasks.filter((task) => !["done", "cancelled"].includes(task.status) && task.quadrant && !task.deadline),
+        missingDeadlines: tasks.filter((task) => !["done", "cancelled"].includes(task.status) && task.quadrant && !task.deadline && !hasFollowUpAnchor(task)),
         scheduleSegments,
         overdue: tasks.filter((task) => task.deadline && task.status !== "done" && new Date(task.deadline) < now).length,
         today: attachSubtaskSummaries(repo, repo.listScheduledBetween(todayStart, todayEnd)),
@@ -404,11 +404,18 @@ function groupQuadrants<T extends { quadrant: string }>(tasks: T[]): Record<stri
   };
 }
 
+function hasFollowUpAnchor(task: Task): boolean {
+  return Boolean(task.isProject && task.nextReviewAt);
+}
+
 const TaskInputSchema = z.object({
   title: z.string().trim().min(1),
   durationMinutes: z.number().int().positive().default(30),
   deadline: z.string().datetime().nullable().optional(),
   earliestStart: z.string().datetime().nullable().optional(),
+  nextReviewAt: z.string().datetime().nullable().optional(),
+  reviewCadenceDays: z.number().int().positive().nullable().optional(),
+  weeklyTargetMinutes: z.number().int().positive().nullable().optional(),
   priority: z.number().int().min(1).max(5).default(3),
   energy: EnergySchema.default("medium"),
   quadrant: QuadrantSchema.nullable().optional(),
@@ -425,6 +432,9 @@ const TaskPatchSchema = z.object({
   durationMinutes: z.number().int().positive().optional(),
   deadline: z.string().datetime().nullable().optional(),
   earliestStart: z.string().datetime().nullable().optional(),
+  nextReviewAt: z.string().datetime().nullable().optional(),
+  reviewCadenceDays: z.number().int().positive().nullable().optional(),
+  weeklyTargetMinutes: z.number().int().positive().nullable().optional(),
   priority: z.number().int().min(1).max(5).optional(),
   energy: EnergySchema.optional(),
   quadrant: QuadrantSchema.nullable().optional(),

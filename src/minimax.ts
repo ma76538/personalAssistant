@@ -92,6 +92,9 @@ export class MiniMaxClient {
           durationMinutes: "positive integer optional",
           deadline: "ISO datetime optional",
           earliestStart: "ISO datetime optional",
+          nextReviewAt: "ISO datetime optional, for ongoing projects without hard deadline",
+          reviewCadenceDays: "positive integer optional, for ongoing projects",
+          weeklyTargetMinutes: "positive integer optional, for ongoing projects",
           priority: "1-5 optional",
           energy: "high|medium|low optional",
           context: "string optional",
@@ -167,6 +170,7 @@ export class MiniMaxClient {
       "公司方向第一版固定為：大健康／展品設備。",
       "價值分 5=電子秘書 MVP 或有 PO/金主且符合方向；4=有 PO/金主但不符合方向；3=無 PO 但符合方向；2=無 PO 不符合方向但可能找到金主；1=沒有商業路徑。",
       "hard deadline 是客戶、PO、政府、合約、比賽、會議前材料、交付等外部後果；soft deadline 是使用者自己定的推進目標。",
+      "沒有外部完成死線、但要持續推進的事，應標為 isProject=true、deadlineType=none 或 soft，並建議 nextReviewAt / nextActionTitle，而不是硬造 deadline。",
       "如果資料不足，recommendedQuadrant 可為 null，並在 clarificationQuestions 提問。"
     ].join("\n");
     const user = JSON.stringify({

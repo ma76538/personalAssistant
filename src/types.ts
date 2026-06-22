@@ -23,6 +23,9 @@ export const ParsedTaskSchema = z.object({
   durationMinutes: z.number().int().positive().optional(),
   deadline: z.string().datetime().optional(),
   earliestStart: z.string().datetime().optional(),
+  nextReviewAt: z.string().datetime().optional(),
+  reviewCadenceDays: z.number().int().positive().optional(),
+  weeklyTargetMinutes: z.number().int().positive().optional(),
   priority: z.number().int().min(1).max(5).optional(),
   energy: EnergySchema.optional(),
   context: z.string().optional(),
@@ -51,6 +54,9 @@ export type Task = {
   durationMinutes: number;
   deadline: string | null;
   earliestStart: string | null;
+  nextReviewAt: string | null;
+  reviewCadenceDays: number | null;
+  weeklyTargetMinutes: number | null;
   priority: number;
   energy: Energy;
   context: string | null;

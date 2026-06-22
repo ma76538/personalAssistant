@@ -38,7 +38,14 @@ const SCHEDULABLE_QUADRANTS = new Set(["urgent-important", "urgent-not-important
 export function buildSchedule(tasks: Task[], now = new Date(), busyBlocks: BusyBlock[] = [], options: { dailyCapacityHours?: number } = {}): ScheduleItem[] {
   const dailyCapacityMinutes = Math.max(30, Math.round((options.dailyCapacityHours ?? DEFAULT_DAILY_CAPACITY_HOURS) * 60));
   const movable = tasks
-    .filter((task) => (task.status === "pending" || task.status === "scheduled") && Boolean(task.deadline) && Boolean(task.quadrant) && task.durationMinutes > 2 && SCHEDULABLE_QUADRANTS.has(task.quadrant!))
+    .filter(
+      (task) =>
+        (task.status === "pending" || task.status === "scheduled") &&
+        Boolean(task.quadrant) &&
+        task.durationMinutes > 2 &&
+        SCHEDULABLE_QUADRANTS.has(task.quadrant!) &&
+        hasScheduleAnchor(task)
+    )
     .sort(compareTasks);
 
   const plan: ScheduleItem[] = [];
@@ -165,13 +172,15 @@ function compareTasks(a: Task, b: Task): number {
   if (a.valueScore !== b.valueScore) {
     return b.valueScore - a.valueScore;
   }
-  if (a.deadline && b.deadline && a.deadline !== b.deadline) {
-    return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+  const aAnchor = scheduleAnchor(a);
+  const bAnchor = scheduleAnchor(b);
+  if (aAnchor && bAnchor && aAnchor !== bAnchor) {
+    return new Date(aAnchor).getTime() - new Date(bAnchor).getTime();
   }
-  if (a.deadline && !b.deadline) {
+  if (aAnchor && !bAnchor) {
     return -1;
   }
-  if (!a.deadline && b.deadline) {
+  if (!aAnchor && bAnchor) {
     return 1;
   }
   if (a.priority !== b.priority) {
@@ -179,4 +188,12 @@ function compareTasks(a: Task, b: Task): number {
   }
   const energyRank = { high: 0, medium: 1, low: 2 };
   return energyRank[a.energy] - energyRank[b.energy];
+}
+
+function hasScheduleAnchor(task: Task): boolean {
+  return Boolean(task.deadline || (task.isProject && task.nextReviewAt));
+}
+
+function scheduleAnchor(task: Task): string | null {
+  return task.deadline || (task.isProject ? task.nextReviewAt : null);
 }

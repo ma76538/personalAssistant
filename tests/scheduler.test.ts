@@ -9,6 +9,9 @@ function task(overrides: Partial<Task>): Task {
     durationMinutes: overrides.durationMinutes ?? 60,
     deadline: overrides.deadline ?? null,
     earliestStart: overrides.earliestStart ?? null,
+    nextReviewAt: overrides.nextReviewAt ?? null,
+    reviewCadenceDays: overrides.reviewCadenceDays ?? null,
+    weeklyTargetMinutes: overrides.weeklyTargetMinutes ?? null,
     priority: overrides.priority ?? 3,
     energy: overrides.energy ?? "medium",
     context: overrides.context ?? null,
@@ -55,6 +58,22 @@ describe("buildSchedule", () => {
   it("does not schedule tasks without deadlines", () => {
     const plan = buildSchedule([task({ id: 1, deadline: null })], new Date("2026-05-23T01:00:00.000Z"));
     expect(plan).toHaveLength(0);
+  });
+
+  it("schedules continuous projects when they have a next review anchor", () => {
+    const plan = buildSchedule(
+      [
+        task({
+          id: 1,
+          deadline: null,
+          deadlineType: "none",
+          isProject: true,
+          nextReviewAt: "2026-05-26T10:00:00.000Z"
+        })
+      ],
+      new Date("2026-05-23T01:00:00.000Z")
+    );
+    expect(plan).toHaveLength(1);
   });
 
   it("does not schedule inbox tasks without a quadrant", () => {

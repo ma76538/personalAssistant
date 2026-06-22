@@ -322,6 +322,7 @@ describe("dashboard API", () => {
     const dueOnly = repo.addTask({ title: "按期限入月曆", quadrant: "urgent-important", deadline: "2026-06-25T10:00:00.000Z" });
     repo.updateTask(dueOnly.id, { scheduledStart: "2026-07-01T10:00:00.000Z", scheduledEnd: "2026-07-01T10:30:00.000Z" });
     repo.addTask({ title: "待補日期", quadrant: "not-urgent-important" });
+    repo.addTask({ title: "持續推進項目", quadrant: "not-urgent-important", isProject: true, nextReviewAt: "2026-06-24T10:00:00.000Z" });
     const notUrgentImportant = repo.addTask({ title: "不緊急重要不入甘特圖", quadrant: "not-urgent-important", deadline: "2026-06-26T10:00:00.000Z" });
     repo.addTask({ title: "純待定任務" });
     const quickWin = repo.addTask({ title: "兩分鐘任務", durationMinutes: 2, quadrant: "urgent-important", deadline: "2026-06-20T10:00:00.000Z" });
@@ -346,6 +347,7 @@ describe("dashboard API", () => {
     expect(payload.calendar.events).toEqual([]);
     expect(payload.pendingBucket.map((task) => task.title)).toContain("純待定任務");
     expect(payload.missingDeadlines.map((task) => task.title)).toContain("待補日期");
+    expect(payload.missingDeadlines.map((task) => task.title)).not.toContain("持續推進項目");
     expect(payload.missingDeadlines.map((task) => task.title)).not.toContain("純待定任務");
     expect(payload.scheduleSegments.length).toBeGreaterThan(0);
     expect(payload.scheduleSegments.map((segment) => segment.taskId)).not.toContain(quickWin.id);

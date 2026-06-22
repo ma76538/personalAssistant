@@ -18,10 +18,11 @@ export function prioritizeTasks(tasks: Task[], now = new Date()): PrioritizedTas
 
 function addPriority(task: Task, now: Date): PrioritizedTask {
   const deadlineScore = scoreDeadline(task, now);
+  const followUpScore = scoreFollowUp(task, now);
   const statusScore = task.status === "in_progress" ? 25 : task.status === "scheduled" ? 10 : 0;
   const energyScore = task.energy === "high" ? 8 : task.energy === "medium" ? 4 : 1;
-  const urgencyScore = task.priority * 12 + deadlineScore.score + statusScore + energyScore;
-  const isUrgent = task.quadrant ? ["urgent-important", "urgent-not-important"].includes(task.quadrant) : deadlineScore.urgent;
+  const urgencyScore = task.priority * 12 + Math.max(deadlineScore.score, followUpScore.score) + statusScore + energyScore;
+  const isUrgent = task.quadrant ? ["urgent-important", "urgent-not-important"].includes(task.quadrant) : deadlineScore.urgent || followUpScore.urgent;
   const isImportant = task.quadrant ? ["urgent-important", "not-urgent-important"].includes(task.quadrant) : task.priority >= 4;
 
   return {
@@ -31,7 +32,7 @@ function addPriority(task: Task, now: Date): PrioritizedTask {
     quadrant: task.quadrant ?? quadrantFor(isUrgent, isImportant),
     isUrgent,
     isImportant,
-    reason: deadlineScore.reason || `優先級 ${task.priority}，${energyLabel(task.energy)}`
+    reason: deadlineScore.reason || followUpScore.reason || `優先級 ${task.priority}，${energyLabel(task.energy)}`
   };
 }
 
@@ -54,6 +55,24 @@ function scoreDeadline(task: Task, now: Date): { score: number; reason: string; 
     return { score: 18, reason: "7 日內到期", urgent: false };
   }
   return { score: 8, reason: "有期限", urgent: false };
+}
+
+function scoreFollowUp(task: Task, now: Date): { score: number; reason: string; urgent: boolean } {
+  if (!task.isProject || !task.nextReviewAt) {
+    return { score: 0, reason: "", urgent: false };
+  }
+
+  const hours = (new Date(task.nextReviewAt).getTime() - now.getTime()) / 3_600_000;
+  if (hours < 0) {
+    return { score: 30, reason: "下次跟進已到", urgent: true };
+  }
+  if (hours <= 24) {
+    return { score: 22, reason: "24 小時內要跟進", urgent: true };
+  }
+  if (hours <= 72) {
+    return { score: 12, reason: "3 日內要跟進", urgent: false };
+  }
+  return { score: 5, reason: "有下次跟進", urgent: false };
 }
 
 function quadrantFor(isUrgent: boolean, isImportant: boolean): PrioritizedTask["quadrant"] {

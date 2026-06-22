@@ -12,6 +12,7 @@
 - [Apple Calendar / kevin@region.mo 月曆整合](./calendar-integration.md)
 - [LLM 任務梳理、提醒與經驗沉澱](./llm-workflow-experience.md)
 - [任務子項目與跟進機制](./subtask-followup-mechanism.md)
+- [Deadline 與 Next Review 設計](./deadline-vs-next-review.md)
 - [一致性檢查與已知限制](./consistency-and-known-issues.md)
 
 ## 目前核心結論
@@ -22,6 +23,7 @@
 - Telegram 每日摘要和定時提醒只應提醒「緊急重要」事項，降低噪音。
 - 月曆視圖應結合本地已排程任務和 `kevin@region.mo` Apple Calendar events。
 - LLM 應負責理解、排序建議、追問和經驗沉澱；真正改任務或排程前仍要 preview / confirm。
+- 有外部後果才填 Due Date；沒有硬期限但需要持續推進的長項目使用 Next Review。
 
 ## 開發工作規則
 
