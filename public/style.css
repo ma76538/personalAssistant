@@ -141,7 +141,9 @@ body.subtask-page-open{overflow:hidden}
 .subtask-page-progress strong{font-size:24px;color:#287174}
 .subtask-page-progress span{font-weight:800;color:#52627b}
 .subtask-list{display:grid;gap:8px;margin-bottom:14px}
-.subtask-check-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(125,145,174,.22);border-radius:8px;background:rgba(255,255,255,.78)}
+.subtask-check-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(125,145,174,.22);border-radius:8px;background:rgba(255,255,255,.78);cursor:grab}
+.subtask-check-row.dragging{opacity:.5;cursor:grabbing}
+.subtask-drag-handle{display:grid;place-items:center;width:22px;height:32px;border-radius:7px;background:rgba(125,145,174,.12);color:#7b889b;font-size:12px;font-weight:900;letter-spacing:-1px}
 .subtask-check-row label{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;min-width:0}
 .subtask-check-row input{width:18px;height:18px;margin-top:2px;accent-color:#4da7aa}
 .subtask-check-row strong{display:block;color:#26334c}

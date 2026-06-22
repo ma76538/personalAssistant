@@ -343,6 +343,14 @@ describe("dashboard API", () => {
       body: JSON.stringify({ title: "提交給阿成" })
     });
     const secondAdded = (await secondAddResponse.json()) as { subtask: { id: number } };
+    const reorderResponse = await fetch(`${baseUrl}/api/subtasks/${secondAdded.subtask.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sortOrder: 0 })
+    });
+    expect(reorderResponse.status).toBe(200);
+    expect(repo.listSubtasks(project.id)[0].id).toBe(secondAdded.subtask.id);
+
     const completeNextResponse = await fetch(`${baseUrl}/api/tasks/${project.id}/subtasks/complete-next`, { method: "POST" });
     expect(completeNextResponse.status).toBe(200);
     expect(repo.subtaskSummary(project.id).done).toBe(2);

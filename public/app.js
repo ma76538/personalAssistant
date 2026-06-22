@@ -61,6 +61,7 @@ let reminderSettingsSaveTimer = null;
 let editingTask = null;
 let subtaskPageTask = null;
 let subtaskPageSubtasks = [];
+let draggedSubtaskId = null;
 
 $("refresh").addEventListener("click", loadDashboard);
 $("new-task").addEventListener("click", () => openEditor());
@@ -70,8 +71,13 @@ drawerBackdropEl.addEventListener("click", closeEditor);
 subtaskBackdropEl?.addEventListener("click", closeSubtaskPage);
 $("close-subtask-page")?.addEventListener("click", closeSubtaskPage);
 $("add-subtask-submit")?.addEventListener("click", addSubtaskFromPage);
+$("subtask-new-title")?.addEventListener("keydown", handleSubtaskNewTitleKeydown);
 subtaskListEl?.addEventListener("change", handleSubtaskCheckboxChange);
 subtaskListEl?.addEventListener("click", handleSubtaskDeleteClick);
+subtaskListEl?.addEventListener("dragstart", handleSubtaskDragStart);
+subtaskListEl?.addEventListener("dragover", handleSubtaskDragOver);
+subtaskListEl?.addEventListener("drop", handleSubtaskDrop);
+subtaskListEl?.addEventListener("dragend", handleSubtaskDragEnd);
 $("clear-completed").addEventListener("click", clearCompletedBin);
 $("save-calendar-settings").addEventListener("click", saveCalendarSettings);
 $("connect-google-calendar")?.addEventListener("click", connectGoogleCalendar);
@@ -987,7 +993,8 @@ function renderSubtaskPage(summary) {
 
 function subtaskCheckRow(item) {
   const checked = item.status === "done" ? "checked" : "";
-  return `<article class="subtask-check-row ${item.status === "done" ? "done" : ""}">
+  return `<article class="subtask-check-row ${item.status === "done" ? "done" : ""}" draggable="true" data-subtask-id="${item.id}">
+    <span class="subtask-drag-handle" aria-hidden="true">::</span>
     <label>
       <input type="checkbox" data-subtask-id="${item.id}" ${checked} />
       <span>
@@ -1009,6 +1016,12 @@ function subtaskStatusLabel(status) {
   }[status] || "未完成";
 }
 
+async function handleSubtaskNewTitleKeydown(event) {
+  if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
+  event.preventDefault();
+  await addSubtaskFromPage();
+}
+
 async function addSubtaskFromPage() {
   if (!subtaskPageTask) return;
   const titleInput = $("subtask-new-title");
@@ -1024,6 +1037,63 @@ async function addSubtaskFromPage() {
   titleInput.value = "";
   await refreshSubtaskPage();
   await loadDashboard();
+}
+
+function handleSubtaskDragStart(event) {
+  if (event.target.closest("button,input")) {
+    event.preventDefault();
+    return;
+  }
+  const row = event.target.closest(".subtask-check-row");
+  if (!row) return;
+  draggedSubtaskId = Number(row.dataset.subtaskId);
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", String(draggedSubtaskId));
+  row.classList.add("dragging");
+}
+
+function handleSubtaskDragOver(event) {
+  if (!draggedSubtaskId) return;
+  const target = event.target.closest(".subtask-check-row");
+  if (!target || Number(target.dataset.subtaskId) === draggedSubtaskId) return;
+  event.preventDefault();
+  const dragging = subtaskListEl.querySelector(`.subtask-check-row[data-subtask-id="${draggedSubtaskId}"]`);
+  if (!dragging) return;
+  const rect = target.getBoundingClientRect();
+  const before = event.clientY < rect.top + rect.height / 2;
+  subtaskListEl.insertBefore(dragging, before ? target : target.nextSibling);
+}
+
+async function handleSubtaskDrop(event) {
+  if (!draggedSubtaskId) return;
+  event.preventDefault();
+  await saveSubtaskOrderFromDom();
+}
+
+function handleSubtaskDragEnd() {
+  subtaskListEl?.querySelector(".subtask-check-row.dragging")?.classList.remove("dragging");
+  draggedSubtaskId = null;
+}
+
+async function saveSubtaskOrderFromDom() {
+  const ids = [...subtaskListEl.querySelectorAll(".subtask-check-row")]
+    .map((row) => Number(row.dataset.subtaskId))
+    .filter(Boolean);
+  if (!ids.length) return;
+  const current = subtaskPageSubtasks.map((item) => item.id).join(",");
+  const next = ids.join(",");
+  if (current === next) return;
+  await Promise.all(
+    ids.map((id, index) =>
+      requestJson(`/api/subtasks/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ sortOrder: index + 1 })
+      })
+    )
+  );
+  await refreshSubtaskPage();
+  await loadDashboard();
+  lastUpdatedEl.textContent = "子項目先後次序已更新。";
 }
 
 async function handleSubtaskCheckboxChange(event) {
