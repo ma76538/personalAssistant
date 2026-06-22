@@ -569,19 +569,21 @@ function taskRow(task, rank) {
     <div class="task-main">
       <strong>${esc(task.title)}</strong>
       ${taskMeta(task)}
-      ${subtaskPanel(task)}
-      ${startMarkup || reviewMarkup ? `<div class="task-dates">${startMarkup}${reviewMarkup}</div>` : ""}
+      <div class="task-compact-row">
+        ${subtaskPanel(task)}
+        ${startMarkup || reviewMarkup ? `<div class="task-dates">${startMarkup}${reviewMarkup}</div>` : ""}
+      </div>
+      <div class="matrix-status-actions" aria-label="改變任務狀態">
+        ${dueChip(task, needsDue)}
+        <button class="${status === "in_progress" ? "active" : ""}" data-action="status" data-status="in_progress" data-id="${task.id}" type="button">進行</button>
+        <button data-action="check-in" data-outcome="complete" data-id="${task.id}" type="button">完成</button>
+        <button data-action="check-in" data-outcome="stuck" data-id="${task.id}" type="button">卡住</button>
+        <button data-action="subtask-page" data-id="${task.id}" type="button">子項</button>
+        ${task.isProject ? `<button data-action="next-action" data-id="${task.id}" type="button">下一步</button>` : ""}
+        <button data-action="pending-bucket" data-id="${task.id}" type="button">待定</button>
+        <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
+      </div>
       ${needsDue ? `<p class="due-warning">${isUrgentQuadrant(task.quadrant) ? "緊急象限任務必須加 Due Date。" : "單步任務請補 Due Date；持續項目可改填 Next Review。"}</p>` : ""}
-    </div>
-    <div class="matrix-status-actions" aria-label="改變任務狀態">
-      ${dueChip(task, needsDue)}
-      <button class="${status === "in_progress" ? "active" : ""}" data-action="status" data-status="in_progress" data-id="${task.id}" type="button">進行中</button>
-      <button data-action="check-in" data-outcome="complete" data-id="${task.id}" type="button">完成</button>
-      <button data-action="check-in" data-outcome="stuck" data-id="${task.id}" type="button">卡住</button>
-      <button data-action="subtask-page" data-id="${task.id}" type="button">子頁面</button>
-      ${task.isProject ? `<button data-action="next-action" data-id="${task.id}" type="button">下一步</button>` : ""}
-      <button data-action="pending-bucket" data-id="${task.id}" type="button">放待定</button>
-      <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
     </div>
   </article>`;
 }
