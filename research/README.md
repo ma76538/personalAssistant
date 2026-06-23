@@ -20,7 +20,7 @@
 ## 目前核心結論
 
 - Apple Reminders 是任務同步的 source of truth。
-- 同步範圍只應包含 `待定 + 四個 Reminders 四象限列表`，其他 Reminder list 不應同步入系統。
+- 同步範圍只應包含 `待定 + 2分鐘完成 + 四個 Reminders 四象限列表`，其他 Reminder list 不應同步入系統。
 - Dashboard 的主要操作界面是四象限；2 分鐘任務獨立顯示，待定任務壓縮在四象限下方。
 - Telegram 每日摘要和定時提醒只應提醒「緊急重要」事項，降低噪音。
 - 月曆視圖應結合任務 Due Date 和 `kevin@region.mo` Google Calendar events；Google Calendar 是 read-only busy source。

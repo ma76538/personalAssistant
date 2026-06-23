@@ -10,7 +10,7 @@
 - **Telegram bot**：接收自然語言任務、確認變更、發送提醒。
 - **MiniMax LLM adapter**：負責中文自然語言解析和摘要生成。
 - **SQLite**：本地事實來源，保存任務、狀態、排程、提醒紀錄。
-- **Apple Reminders adapter**：與 macOS Reminders 的 `待定 + 四象限` 列表同步。
+- **Apple Reminders adapter**：與 macOS Reminders 的 `待定 + 2分鐘完成 + 四象限` 列表同步。
 - **Apple Calendar adapter**：讀取 `kevin@region.mo` 的本月日曆事件。
 
 ## 資料流

@@ -237,7 +237,7 @@ export class AssistantRepository {
       priority: input.priority ?? task.priority,
       energy: (input.energy ?? task.energy) as Task["energy"],
       context: input.context === undefined ? task.context : input.context,
-      quadrant: input.quadrant ?? task.quadrant,
+      quadrant: input.quadrant === undefined ? task.quadrant : input.quadrant,
       valueScore: input.valueScore ?? task.valueScore,
       deadlineType: input.deadlineType ?? task.deadlineType,
       isProject: input.isProject ?? task.isProject,

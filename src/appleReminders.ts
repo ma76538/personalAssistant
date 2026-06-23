@@ -11,6 +11,7 @@ export type AppleReminderItem = {
   completed: boolean;
   listName: string;
   quadrant: Quadrant | null;
+  quickWin: boolean;
   statusTag: "pending" | "in_progress" | "done" | null;
 };
 
@@ -94,6 +95,9 @@ func quadrantKey(_ title: String) -> String? {
     "緊要不重要": "urgent-not-important",
     "緊要唔重要": "urgent-not-important",
     "不緊急重要": "not-urgent-important",
+    "重要不緊急": "not-urgent-important",
+    "重要唔緊急": "not-urgent-important",
+    "重要不急": "not-urgent-important",
     "唔緊急重要": "not-urgent-important",
     "不急重要": "not-urgent-important",
     "唔急重要": "not-urgent-important",
@@ -114,6 +118,13 @@ func isPendingList(_ title: String) -> Bool {
   return key == "待定"
 }
 
+func isQuickWinList(_ title: String) -> Bool {
+  let key = title
+    .replacingOccurrences(of: " ", with: "")
+    .replacingOccurrences(of: "　", with: "")
+  return key == "2分鐘完成" || key == "兩分鐘完成" || key == "2分鐘" || key == "兩分鐘"
+}
+
 func ensureManagedCalendars(_ store: EKEventStore) -> [EKCalendar] {
   var calendars = store.calendars(for: .reminder)
   if !calendars.contains(where: { isPendingList($0.title) }) {
@@ -123,7 +134,14 @@ func ensureManagedCalendars(_ store: EKEventStore) -> [EKCalendar] {
     try? store.saveCalendar(calendar, commit: true)
     calendars = store.calendars(for: .reminder)
   }
-  return calendars.filter { quadrantKey($0.title) != nil || isPendingList($0.title) }
+  if !calendars.contains(where: { isQuickWinList($0.title) }) {
+    let calendar = EKCalendar(for: .reminder, eventStore: store)
+    calendar.title = "2分鐘完成"
+    calendar.source = store.defaultCalendarForNewReminders()?.source ?? store.sources.first
+    try? store.saveCalendar(calendar, commit: true)
+    calendars = store.calendars(for: .reminder)
+  }
+  return calendars.filter { quadrantKey($0.title) != nil || isPendingList($0.title) || isQuickWinList($0.title) }
 }
 
 let statusTags: [String: String] = ["#待定": "pending", "#進行中": "in_progress", "#完成": "done"]
@@ -159,6 +177,7 @@ func reminderPayload(_ reminder: EKReminder) -> [String: Any] {
     "completed": reminder.isCompleted,
     "listName": reminder.calendar.title,
     "quadrant": quadrantKey(reminder.calendar.title) ?? NSNull(),
+    "quickWin": isQuickWinList(reminder.calendar.title),
     "statusTag": statusTag((reminder.notes ?? "") + " " + (reminder.title ?? "")) ?? NSNull()
   ]
 }
@@ -238,6 +257,9 @@ func quadrantKey(_ title: String) -> String? {
     "緊要不重要": "urgent-not-important",
     "緊要唔重要": "urgent-not-important",
     "不緊急重要": "not-urgent-important",
+    "重要不緊急": "not-urgent-important",
+    "重要唔緊急": "not-urgent-important",
+    "重要不急": "not-urgent-important",
     "唔緊急重要": "not-urgent-important",
     "不急重要": "not-urgent-important",
     "唔急重要": "not-urgent-important",
@@ -258,12 +280,34 @@ func isPendingList(_ title: String) -> Bool {
   return key == "待定"
 }
 
+func isQuickWinList(_ title: String) -> Bool {
+  let key = title
+    .replacingOccurrences(of: " ", with: "")
+    .replacingOccurrences(of: "　", with: "")
+  return key == "2分鐘完成" || key == "兩分鐘完成" || key == "2分鐘" || key == "兩分鐘"
+}
+
 func ensurePendingCalendar(_ store: EKEventStore) -> EKCalendar? {
   if let existing = store.calendars(for: .reminder).first(where: { isPendingList($0.title) }) {
     return existing
   }
   let calendar = EKCalendar(for: .reminder, eventStore: store)
   calendar.title = "待定"
+  calendar.source = store.defaultCalendarForNewReminders()?.source ?? store.sources.first
+  do {
+    try store.saveCalendar(calendar, commit: true)
+    return calendar
+  } catch {
+    return nil
+  }
+}
+
+func ensureQuickWinCalendar(_ store: EKEventStore) -> EKCalendar? {
+  if let existing = store.calendars(for: .reminder).first(where: { isQuickWinList($0.title) }) {
+    return existing
+  }
+  let calendar = EKCalendar(for: .reminder, eventStore: store)
+  calendar.title = "2分鐘完成"
   calendar.source = store.defaultCalendarForNewReminders()?.source ?? store.sources.first
   do {
     try store.saveCalendar(calendar, commit: true)
@@ -323,7 +367,10 @@ if let sourceId, let existing = store.calendarItem(withIdentifier: sourceId) as?
 }
 
 let calendars = store.calendars(for: .reminder)
-if let quadrant = payload["quadrant"] as? String,
+let quickWin = (payload["quickWin"] as? Bool) ?? false
+if quickWin, let calendar = ensureQuickWinCalendar(store) {
+  reminder.calendar = calendar
+} else if let quadrant = payload["quadrant"] as? String,
    let calendar = calendars.first(where: { quadrantKey($0.title) == quadrant }) {
   reminder.calendar = calendar
 } else if let calendar = ensurePendingCalendar(store) {
@@ -396,10 +443,9 @@ print(String(data: data, encoding: .utf8)!)
 `;
 
 export function syncAppleReminders(repo: AssistantRepository, listName = "全部"): SyncResult {
-  const trackedIds = repo
-    .listExternalTasks("apple-reminders")
-    .map((task) => task.sourceId)
-    .filter((sourceId): sourceId is string => Boolean(sourceId));
+  const externalTasks = repo.listExternalTasks("apple-reminders");
+  const externalTaskBySourceId = new Map(externalTasks.filter((task) => task.sourceId).map((task) => [task.sourceId!, task]));
+  const trackedIds = externalTasks.map((task) => task.sourceId).filter((sourceId): sourceId is string => Boolean(sourceId));
   const raw = execFileSync("swift", ["-e", EVENTKIT_SCRIPT, listName, JSON.stringify(trackedIds)], {
     encoding: "utf8",
     timeout: 15000,
@@ -413,15 +459,18 @@ export function syncAppleReminders(repo: AssistantRepository, listName = "全部
   const deletedSourceIds = snapshot.tracked.filter((item) => !item.exists).map((item) => item.id);
 
   for (const item of activeItems) {
+    const quickWin = item.quickWin || isQuickWinList(item.listName);
+    const existing = externalTaskBySourceId.get(item.id);
     const task = repo.upsertExternalTask({
       source: "apple-reminders",
       sourceId: item.id,
       title: item.title,
+      durationMinutes: quickWin ? 2 : existing && existing.durationMinutes <= 2 ? 30 : undefined,
       deadline: item.dueDate,
       priority: mapPriority(item.priority, item.listName),
       energy: "medium",
       context: item.notes,
-      quadrant: item.quadrant ?? mapQuadrant(item.listName)
+      quadrant: quickWin ? null : item.quadrant ?? mapQuadrant(item.listName)
     });
     if (item.statusTag !== statusTagForTask(task.status)) {
       const sourceId = writeTaskToAppleReminder(task);
@@ -447,6 +496,7 @@ export function writeTaskToAppleReminder(task: Task): string | null {
     deadline: task.deadline,
     priority: task.priority,
     status: task.status,
+    quickWin: task.durationMinutes <= 2,
     quadrant: task.quadrant
   };
   const raw = execFileSync("swift", ["-e", EVENTKIT_WRITE_SCRIPT, JSON.stringify(payload)], {
@@ -483,6 +533,9 @@ function mapQuadrant(listName: string): Quadrant | null {
     緊要不重要: "urgent-not-important",
     緊要唔重要: "urgent-not-important",
     不緊急重要: "not-urgent-important",
+    重要不緊急: "not-urgent-important",
+    重要唔緊急: "not-urgent-important",
+    重要不急: "not-urgent-important",
     唔緊急重要: "not-urgent-important",
     不急重要: "not-urgent-important",
     唔急重要: "not-urgent-important",
@@ -494,6 +547,11 @@ function mapQuadrant(listName: string): Quadrant | null {
     唔急唔重要: "not-urgent-not-important"
   };
   return aliases[listName.replaceAll(/\s/g, "")] ?? null;
+}
+
+function isQuickWinList(listName: string): boolean {
+  const key = listName.replaceAll(/\s/g, "");
+  return key === "2分鐘完成" || key === "兩分鐘完成" || key === "2分鐘" || key === "兩分鐘";
 }
 
 function mapPriority(priority: number | null, listName = ""): number {
