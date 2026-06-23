@@ -383,6 +383,7 @@ describe("dashboard API", () => {
     repo.updateTask(dueOnly.id, { scheduledStart: "2026-07-01T10:00:00.000Z", scheduledEnd: "2026-07-01T10:30:00.000Z" });
     repo.addTask({ title: "待補日期", quadrant: "not-urgent-important" });
     repo.addTask({ title: "持續推進項目", quadrant: "not-urgent-important", isProject: true, nextReviewAt: "2026-06-24T10:00:00.000Z" });
+    repo.addTask({ title: "緊急長項目仍要 Due", quadrant: "urgent-important", isProject: true, nextReviewAt: "2026-06-24T10:00:00.000Z" });
     const notUrgentImportant = repo.addTask({ title: "不緊急重要不入甘特圖", quadrant: "not-urgent-important", deadline: "2026-06-26T10:00:00.000Z" });
     repo.addTask({ title: "純待定任務" });
     const quickWin = repo.addTask({ title: "兩分鐘任務", durationMinutes: 2, quadrant: "urgent-important", deadline: "2026-06-20T10:00:00.000Z" });
@@ -407,11 +408,33 @@ describe("dashboard API", () => {
     expect(payload.calendar.events).toEqual([]);
     expect(payload.pendingBucket.map((task) => task.title)).toContain("純待定任務");
     expect(payload.missingDeadlines.map((task) => task.title)).toContain("待補日期");
+    expect(payload.missingDeadlines.map((task) => task.title)).toContain("緊急長項目仍要 Due");
     expect(payload.missingDeadlines.map((task) => task.title)).not.toContain("持續推進項目");
     expect(payload.missingDeadlines.map((task) => task.title)).not.toContain("純待定任務");
     expect(payload.scheduleSegments.length).toBeGreaterThan(0);
     expect(payload.scheduleSegments.map((segment) => segment.taskId)).not.toContain(quickWin.id);
     expect(payload.scheduleSegments.map((segment) => segment.taskId)).not.toContain(lowValue.id);
     expect(payload.scheduleSegments.map((segment) => segment.taskId)).not.toContain(notUrgentImportant.id);
+  });
+
+  it("documents and renders the task container framework", async () => {
+    const { baseUrl } = createHarness();
+
+    const response = await fetch(baseUrl);
+    const html = await response.text();
+    const readme = fs.readFileSync(path.join(process.cwd(), "research", "README.md"), "utf8");
+    const framework = fs.readFileSync(path.join(process.cwd(), "research", "task-container-framework.md"), "utf8");
+
+    expect(response.status).toBe(200);
+    expect(html).toContain("任務應放在哪裡？");
+    expect(html).toContain("長項目 / Project");
+    expect(html).toContain("Calendar 活動");
+    expect(html).toContain("長項目 / 持續推進");
+    expect(html).toContain("沒有真正 deadline、但要定期推進時使用。");
+    expect(readme).toContain("./task-container-framework.md");
+    expect(framework).toContain("郭正橦個人小型展覽");
+    expect(framework).toContain("銀葵4個軟著");
+    expect(framework).toContain("商會 AI 應用培訓");
+    expect(framework).toContain("先判斷容器，再決定提醒和排程");
   });
 });

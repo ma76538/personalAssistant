@@ -40,6 +40,7 @@ const DASHBOARD_SECTION_ORDER_KEY = "personalAssistant.dashboardSectionOrder.v1"
 const DASHBOARD_SECTION_META = {
   "focus-panel": { icon: "◎", label: "今日先做" },
   "ai-triage": { icon: "✦", label: "AI 梳理" },
+  "container-guide": { icon: "□", label: "收納判斷" },
   "quick-wins": { icon: "⚡", label: "2 分鐘" },
   matrix: { icon: "▦", label: "四象限" },
   "pending-bucket": { icon: "◇", label: "待定" },
@@ -607,7 +608,7 @@ function taskRow(task, rank) {
         <button data-action="pending-bucket" data-id="${task.id}" type="button">待定</button>
         <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
       </div>
-      ${needsDue ? `<p class="due-warning">${isUrgentQuadrant(task.quadrant) ? "緊急象限任務必須加 Due Date。" : "單步任務請補 Due Date；持續項目可改填 Next Review。"}</p>` : ""}
+      ${needsDue ? `<p class="due-warning">${dueWarningText(task)}</p>` : ""}
     </div>
   </article>`;
 }
@@ -751,11 +752,12 @@ function dueChip(task, needsDue = false) {
 
 function taskMeta(task) {
   const chips = [
+    `<span>${containerKindLabel(task)}</span>`,
     `<span>價值 ${task.valueScore ?? 3}</span>`,
     `<span>${deadlineTypeLabel(task.deadlineType)}</span>`,
     task.nextReviewAt ? `<span>下次跟進 ${shortMonthDay(task.nextReviewAt)}</span>` : "",
     task.weeklyTargetMinutes ? `<span>每週 ${task.weeklyTargetMinutes} 分鐘</span>` : "",
-    task.isProject ? "<span>項目</span>" : "",
+    task.isProject ? "<span>長項目</span>" : "",
     task.projectId ? `<span>屬於 #${task.projectId}</span>` : ""
   ].filter(Boolean);
   return `<div class="task-tags meta-tags">${chips.join("")}</div>`;
@@ -1327,6 +1329,12 @@ function needsDueDate(task) {
   return !hasFollowUpAnchor(task);
 }
 
+function dueWarningText(task) {
+  if (isUrgentQuadrant(task.quadrant)) return "緊急象限任務必須加 Due Date。";
+  if (task.isProject) return "長項目請填 Next Review；有外部後果才補 Due Date。";
+  return "單步任務請補 Due Date；若是長期推進，請改成長項目並填 Next Review。";
+}
+
 function hasScheduleAnchor(task) {
   return Boolean(task.deadline || hasFollowUpAnchor(task));
 }
@@ -1337,6 +1345,13 @@ function scheduleAnchor(task) {
 
 function deadlineTypeLabel(type) {
   return { hard: "Hard deadline", soft: "Soft deadline", none: "未定 deadline" }[type || "none"] || "未定 deadline";
+}
+
+function containerKindLabel(task) {
+  if (isQuickWin(task)) return "2 分鐘完成";
+  if (!task.quadrant) return "待定";
+  if (task.isProject) return "長項目 / Project";
+  return "單步任務";
 }
 
 function quadrantLabel(quadrant) {

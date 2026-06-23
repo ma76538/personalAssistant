@@ -14,6 +14,7 @@
 - [LLM 任務梳理、提醒與經驗沉澱](./llm-workflow-experience.md)
 - [任務子項目與跟進機制](./subtask-followup-mechanism.md)
 - [Deadline 與 Next Review 設計](./deadline-vs-next-review.md)
+- [電子秘書任務收納框架](./task-container-framework.md)
 - [一致性檢查與已知限制](./consistency-and-known-issues.md)
 
 ## 目前核心結論
@@ -26,6 +27,7 @@
 - Dashboard 上網模式應使用 Google OAuth 登入，用戶管理由後台控制。
 - LLM 應負責理解、排序建議、追問和經驗沉澱；真正改任務或排程前仍要 preview / confirm。
 - 有外部後果才填 Due Date；沒有硬期限但需要持續推進的長項目使用 Next Review。
+- 先判斷事項放入哪個容器：待定、2 分鐘完成、單步任務、長項目 / Project、Calendar 活動。
 
 ## 開發工作規則
 

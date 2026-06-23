@@ -447,7 +447,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         active: tasks.filter((task) => !["done", "cancelled"].includes(task.status)).length,
         done: tasks.filter((task) => task.status === "done").length,
         pendingBucket: tasks.filter((task) => !["done", "cancelled"].includes(task.status) && !task.quadrant),
-        missingDeadlines: tasks.filter((task) => !["done", "cancelled"].includes(task.status) && task.quadrant && !task.deadline && !hasFollowUpAnchor(task)),
+        missingDeadlines: tasks.filter((task) => needsDueDate(task)),
         scheduleSegments,
         overdue: tasks.filter((task) => task.deadline && task.status !== "done" && new Date(task.deadline) < now).length,
         today: attachSubtaskSummaries(repo, repo.listScheduledBetween(todayStart, todayEnd)),
@@ -484,6 +484,13 @@ function groupQuadrants<T extends { quadrant: string }>(tasks: T[]): Record<stri
 
 function hasFollowUpAnchor(task: Task): boolean {
   return Boolean(task.isProject && task.nextReviewAt);
+}
+
+function needsDueDate(task: Task): boolean {
+  if (["done", "cancelled"].includes(task.status)) return false;
+  if (!task.quadrant || task.deadline) return false;
+  if (task.quadrant === "urgent-important" || task.quadrant === "urgent-not-important") return true;
+  return !hasFollowUpAnchor(task);
 }
 
 const TaskInputSchema = z.object({
