@@ -127,6 +127,7 @@ export class AssistantRepository {
     this.ensureColumn("tasks", "next_review_at", "TEXT");
     this.ensureColumn("tasks", "review_cadence_days", "INTEGER");
     this.ensureColumn("tasks", "weekly_target_minutes", "INTEGER");
+    this.ensureColumn("tasks", "today_focus_order", "INTEGER");
     this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_source ON tasks (source, source_id) WHERE source IS NOT NULL AND source_id IS NOT NULL");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_task_subtasks_task ON task_subtasks (task_id, sort_order, id)");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_dashboard_sessions_user ON dashboard_sessions (user_id, expires_at)");
@@ -156,6 +157,7 @@ export class AssistantRepository {
     isProject?: boolean;
     projectId?: number | null;
     progressNote?: string | null;
+    todayFocusOrder?: number | null;
     source?: string | null;
     sourceId?: string | null;
   }): Task {
@@ -164,12 +166,12 @@ export class AssistantRepository {
       INSERT INTO tasks (
         title, duration_minutes, deadline, earliest_start, priority, energy, context,
         quadrant, value_score, deadline_type, is_project, project_id, progress_note,
-        next_review_at, review_cadence_days, weekly_target_minutes,
+        next_review_at, review_cadence_days, weekly_target_minutes, today_focus_order,
         source, source_id, status, created_at, updated_at
       ) VALUES (
         @title, @durationMinutes, @deadline, @earliestStart, @priority, @energy, @context,
         @quadrant, @valueScore, @deadlineType, @isProject, @projectId, @progressNote,
-        @nextReviewAt, @reviewCadenceDays, @weeklyTargetMinutes,
+        @nextReviewAt, @reviewCadenceDays, @weeklyTargetMinutes, @todayFocusOrder,
         @source, @sourceId, 'pending', @createdAt, @updatedAt
       )
     `);
@@ -190,6 +192,7 @@ export class AssistantRepository {
       isProject: input.isProject ? 1 : 0,
       projectId: input.projectId ?? null,
       progressNote: input.progressNote ?? null,
+      todayFocusOrder: input.todayFocusOrder ?? null,
       source: input.source ?? null,
       sourceId: input.sourceId ?? null,
       createdAt: timestamp,
@@ -217,6 +220,7 @@ export class AssistantRepository {
     isProject?: boolean;
     projectId?: number | null;
     progressNote?: string | null;
+    todayFocusOrder?: number | null;
   }): Task {
     const existing = this.db
       .prepare("SELECT * FROM tasks WHERE source = ? AND source_id = ? LIMIT 1")
@@ -243,6 +247,7 @@ export class AssistantRepository {
       isProject: input.isProject ?? task.isProject,
       projectId: input.projectId === undefined ? task.projectId : input.projectId,
       progressNote: input.progressNote === undefined ? task.progressNote : input.progressNote,
+      todayFocusOrder: input.todayFocusOrder === undefined ? task.todayFocusOrder : input.todayFocusOrder,
       status: task.status === "done" || task.status === "cancelled" ? "pending" : task.status,
       scheduledStart: null,
       scheduledEnd: null,
@@ -458,6 +463,7 @@ export class AssistantRepository {
           is_project = @isProject,
           project_id = @projectId,
           progress_note = @progressNote,
+          today_focus_order = @todayFocusOrder,
           source = @source,
           source_id = @sourceId,
           updated_at = @updatedAt
@@ -815,6 +821,7 @@ export class AssistantRepository {
       isProject: Boolean(row.is_project),
       projectId: row.project_id === null || row.project_id === undefined ? null : Number(row.project_id),
       progressNote: row.progress_note ? String(row.progress_note) : null,
+      todayFocusOrder: row.today_focus_order === null || row.today_focus_order === undefined ? null : Number(row.today_focus_order),
       source: row.source ? String(row.source) : null,
       sourceId: row.source_id ? String(row.source_id) : null,
       createdAt: String(row.created_at),

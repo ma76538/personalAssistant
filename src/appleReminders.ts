@@ -331,12 +331,8 @@ let managedStatusTags = ["#待定", "#進行中", "#完成"]
 
 func statusLabel(_ status: String?) -> String? {
   switch status {
-  case "done":
-    return "完成"
   case "in_progress":
     return "進行中"
-  case "pending", "scheduled":
-    return "待定"
   default:
     return nil
   }
@@ -575,8 +571,6 @@ function mapPriority(priority: number | null, listName = ""): number {
 }
 
 function statusTagForTask(status: Task["status"]): AppleReminderItem["statusTag"] {
-  if (status === "done") return "done";
   if (status === "in_progress") return "in_progress";
-  if (status === "pending" || status === "scheduled") return "pending";
   return null;
 }

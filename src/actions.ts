@@ -184,6 +184,7 @@ function fakeTask(task: ParsedTask, id: number, now: Date): Task {
     isProject: task.isProject ?? false,
     projectId: task.projectId ?? null,
     progressNote: task.progressNote ?? null,
+    todayFocusOrder: null,
     source: null,
     sourceId: null,
     createdAt: now.toISOString(),

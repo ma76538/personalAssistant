@@ -121,6 +121,7 @@ function setSidebarCollapsed(collapsed, persist = false) {
 }
 
 matrixEl.addEventListener("click", handleTaskButtonClick);
+focusListEl.addEventListener("click", handleTaskButtonClick);
 matrixEl.addEventListener("dragstart", handleDragStart);
 matrixEl.addEventListener("dragend", handleDragEnd);
 matrixEl.addEventListener("dragover", (event) => {
@@ -310,6 +311,8 @@ async function handleTaskButtonClick(event) {
   if (button.dataset.action === "delete") await requestJson(`/api/tasks/${id}`, { method: "DELETE" });
   if (button.dataset.action === "restore") await restoreToUrgentImportant(task);
   if (button.dataset.action === "pending-bucket") await moveTaskToPendingBucket(task);
+  if (button.dataset.action === "today-focus") await addTaskToTodayFocus(task);
+  if (button.dataset.action === "remove-today-focus") await removeTaskFromTodayFocus(id);
   if (button.dataset.action === "quadrant") await updateTaskQuadrant(id, button.dataset.quadrant);
   if (button.dataset.action === "status") await updateTaskStatus(id, button.dataset.status);
   if (button.dataset.action === "check-in") await checkInTask(id, button.dataset.outcome || "defer");
@@ -348,6 +351,24 @@ async function moveTaskToQuickWins(taskId) {
     method: "PATCH",
     body: JSON.stringify({ durationMinutes: 2, status: "pending" })
   });
+}
+
+async function addTaskToTodayFocus(task) {
+  const maxOrder = Math.max(0, ...state.tasks.map((item) => item.todayFocusOrder || 0));
+  await requestJson(`/api/tasks/${task.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ todayFocusOrder: task.todayFocusOrder || maxOrder + 1 })
+  });
+  lastUpdatedEl.textContent = `已加入今日先做：「${task.title}」`;
+}
+
+async function removeTaskFromTodayFocus(id) {
+  const task = state.tasks.find((item) => item.id === Number(id));
+  await requestJson(`/api/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ todayFocusOrder: null })
+  });
+  lastUpdatedEl.textContent = task ? `已移出今日先做：「${task.title}」` : "已移出今日先做";
 }
 
 async function restoreToUrgentImportant(task) {
@@ -492,6 +513,7 @@ function pendingTask(task) {
       </div>
     </div>
     <div class="pending-actions">
+      ${todayFocusButton(task)}
       <button data-action="edit" data-id="${task.id}" type="button">編輯</button>
     </div>
   </article>`;
@@ -566,6 +588,7 @@ function quickWinRow(task) {
       <strong>${esc(task.title)}</strong>
       <small>${task.deadline ? `Due ${shortMonthDay(task.deadline)}` : "立即處理的小任務"}</small>
     </div>
+    ${todayFocusButton(task)}
     <button class="quick-done" data-action="status" data-status="done" data-id="${task.id}" type="button">完成</button>
   </article>`;
 }
@@ -600,6 +623,7 @@ function taskRow(task, rank) {
       </div>
       <div class="matrix-status-actions" aria-label="改變任務狀態">
         ${dueChip(task, needsDue)}
+        ${todayFocusButton(task)}
         <button class="${status === "in_progress" ? "active" : ""}" data-action="status" data-status="in_progress" data-id="${task.id}" type="button">進行</button>
         <button data-action="check-in" data-outcome="complete" data-id="${task.id}" type="button">完成</button>
         <button data-action="check-in" data-outcome="stuck" data-id="${task.id}" type="button">卡住</button>
@@ -1160,8 +1184,14 @@ async function connectGoogleCalendar() {
 function renderFocusList() {
   const priorities = state.summary?.topPriorities || [];
   focusListEl.innerHTML = priorities.length
-    ? priorities.slice(0, 5).map((task, index) => `<article class="focus-item"><span>${index + 1}</span><div class="focus-copy"><strong>#${task.id} ${esc(task.title)}</strong><small>${esc(task.reason || "今日優先處理")}</small></div></article>`).join("")
-    : `<div class="empty">目前沒有未完成任務。</div>`;
+    ? priorities.map((task, index) => `<article class="focus-item" data-id="${task.id}"><span>${index + 1}</span><div class="focus-copy"><strong>#${task.id} ${esc(task.title)}</strong><small>${esc(task.deadline ? `Due ${shortMonthDay(task.deadline)}` : "你手動加入今日先做")}</small></div><button class="focus-remove" data-action="remove-today-focus" data-id="${task.id}" type="button">移除</button></article>`).join("")
+    : `<div class="empty">今日先做由你決定；在任務上按「今日」加入。</div>`;
+}
+
+function todayFocusButton(task) {
+  return task.todayFocusOrder
+    ? `<button class="today-focus active" data-action="remove-today-focus" data-id="${task.id}" type="button">今日✓</button>`
+    : `<button class="today-focus" data-action="today-focus" data-id="${task.id}" type="button">今日</button>`;
 }
 
 function openEditor(task = null) {

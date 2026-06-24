@@ -69,6 +69,7 @@ export type Task = {
   isProject: boolean;
   projectId: number | null;
   progressNote: string | null;
+  todayFocusOrder: number | null;
   source: string | null;
   sourceId: string | null;
   createdAt: string;

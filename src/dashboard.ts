@@ -314,11 +314,15 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         const input = TaskPatchSchema.parse(await readJson(request));
         const nextStatus = input.status ?? current.status;
         const shouldClearSchedule = ["pending", "scheduled", "done", "cancelled"].includes(nextStatus);
-        const updated = repo.updateTask(taskId, {
+        const taskPatch = {
           ...input,
           scheduledStart: shouldClearSchedule ? null : current.scheduledStart,
           scheduledEnd: shouldClearSchedule ? null : current.scheduledEnd
-        });
+        };
+        if (["done", "cancelled"].includes(nextStatus)) {
+          taskPatch.todayFocusOrder = null;
+        }
+        const updated = repo.updateTask(taskId, taskPatch);
         const sourceId = writeTaskToAppleReminder(updated);
         if (sourceId && sourceId !== updated.sourceId) {
           repo.updateTask(taskId, { source: "apple-reminders", sourceId });
@@ -437,6 +441,9 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
       const prioritized = prioritizeTasks(tasks, now);
       const pendingTaskIds = new Set(tasks.filter((task) => !task.quadrant).map((task) => task.id));
       const actionablePriorities = prioritized.filter((task) => !pendingTaskIds.has(task.id));
+      const todayFocus = tasks
+        .filter((task) => task.todayFocusOrder !== null && !["done", "cancelled"].includes(task.status))
+        .sort((a, b) => (a.todayFocusOrder ?? Number.MAX_SAFE_INTEGER) - (b.todayFocusOrder ?? Number.MAX_SAFE_INTEGER));
       const completed = tasks.filter((task) => task.status === "done").sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       const calendar = await listCalendarEvents(repo, monthStart, monthEnd);
       const busyBlocks = calendarEventsToBusyBlocks(calendar.events);
@@ -458,7 +465,7 @@ export function startDashboardServer(repo: AssistantRepository, port: number, mi
         calendar,
         workSettings,
         completed,
-        topPriorities: actionablePriorities.slice(0, 5),
+        topPriorities: todayFocus,
         quadrants: groupQuadrants(actionablePriorities),
         byEnergy: countBy(tasks, "energy"),
         byStatus: countBy(tasks, "status")
@@ -509,7 +516,8 @@ const TaskInputSchema = z.object({
   deadlineType: DeadlineTypeSchema.default("none"),
   isProject: z.boolean().default(false),
   projectId: z.number().int().positive().nullable().optional(),
-  progressNote: z.string().trim().nullable().optional()
+  progressNote: z.string().trim().nullable().optional(),
+  todayFocusOrder: z.number().int().positive().nullable().optional()
 });
 
 const TaskPatchSchema = z.object({
@@ -529,7 +537,8 @@ const TaskPatchSchema = z.object({
   deadlineType: DeadlineTypeSchema.optional(),
   isProject: z.boolean().optional(),
   projectId: z.number().int().positive().nullable().optional(),
-  progressNote: z.string().trim().nullable().optional()
+  progressNote: z.string().trim().nullable().optional(),
+  todayFocusOrder: z.number().int().positive().nullable().optional()
 });
 
 const SyncInputSchema = z.object({
@@ -868,7 +877,7 @@ async function reschedule(repo: AssistantRepository): Promise<void> {
 function applyCheckIn(repo: AssistantRepository, task: Task, input: z.infer<typeof CheckInSchema>): Task {
   const note = input.note || task.progressNote;
   if (input.outcome === "complete") {
-    return repo.updateTask(task.id, { status: "done", scheduledStart: null, scheduledEnd: null, progressNote: note ?? task.progressNote });
+    return repo.updateTask(task.id, { status: "done", scheduledStart: null, scheduledEnd: null, progressNote: note ?? task.progressNote, todayFocusOrder: null });
   }
   if (input.outcome === "stuck") {
     return repo.updateTask(task.id, {

@@ -30,7 +30,7 @@
 
 - 任務可沒有 Due Date，但必須是長項目並填 Next Review。
 - Next Review 不是 hard deadline，不代表整件事要在那天完成。
-- Next Review 到期或接近時，今日優先排序會提高該項目。
+- Next Review 到期或接近時，系統可提示使用者考慮加入「今日先做」，但不會自動替使用者決定。
 - 排程器可根據 Next Review 安排下一段工作，但不把任務寫入 Calendar。
 - 四象限任務卡會顯示 Next Review。
 

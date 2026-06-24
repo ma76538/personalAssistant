@@ -116,4 +116,31 @@ describe("Apple Reminders sync", () => {
     expect(task.durationMinutes).toBe(30);
     repo.close();
   });
+
+  it("does not rewrite plain pending reminders just to add a pending note tag", () => {
+    const repo = tempRepo();
+    mockSnapshot({
+      active: [
+        {
+          id: "pending-1",
+          title: "普通待定事項",
+          notes: "原有備註",
+          dueDate: null,
+          priority: null,
+          completed: false,
+          listName: "待定",
+          quadrant: null,
+          quickWin: false,
+          statusTag: null
+        }
+      ],
+      tracked: []
+    });
+
+    syncAppleReminders(repo);
+
+    expect(execFileSync).toHaveBeenCalledTimes(1);
+    expect(repo.listAllTasks()[0].context).toBe("原有備註");
+    repo.close();
+  });
 });

@@ -417,6 +417,38 @@ describe("dashboard API", () => {
     expect(payload.scheduleSegments.map((segment) => segment.taskId)).not.toContain(notUrgentImportant.id);
   });
 
+  it("uses only manually selected tasks for today focus", async () => {
+    const { repo, baseUrl } = createHarness();
+    const automatic = repo.addTask({ title: "高分但未選", priority: 5, quadrant: "urgent-important", deadline: "2026-06-20T10:00:00.000Z" });
+    const second = repo.addTask({ title: "第二件今日做", quadrant: "urgent-not-important", todayFocusOrder: 2 });
+    const first = repo.addTask({ title: "第一件今日做", quadrant: "not-urgent-important", todayFocusOrder: 1 });
+    const completed = repo.addTask({ title: "已完成今日項", quadrant: "urgent-important", todayFocusOrder: 3 });
+    repo.updateTask(completed.id, { status: "done" });
+
+    const initialResponse = await fetch(`${baseUrl}/api/summary`);
+    const initial = (await initialResponse.json()) as { topPriorities: Array<{ title: string }> };
+
+    expect(initial.topPriorities.map((task) => task.title)).toEqual(["第一件今日做", "第二件今日做"]);
+    expect(initial.topPriorities.map((task) => task.title)).not.toContain("高分但未選");
+    expect(initial.topPriorities.map((task) => task.title)).not.toContain("已完成今日項");
+
+    await fetch(`${baseUrl}/api/tasks/${automatic.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ todayFocusOrder: 3 })
+    });
+    await fetch(`${baseUrl}/api/tasks/${first.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ todayFocusOrder: null })
+    });
+
+    const updatedResponse = await fetch(`${baseUrl}/api/summary`);
+    const updated = (await updatedResponse.json()) as { topPriorities: Array<{ title: string }> };
+    expect(updated.topPriorities.map((task) => task.title)).toEqual(["第二件今日做", "高分但未選"]);
+    expect(repo.getTask(first.id)?.todayFocusOrder).toBeNull();
+  });
+
   it("documents and renders the task container framework", async () => {
     const { baseUrl } = createHarness();
 

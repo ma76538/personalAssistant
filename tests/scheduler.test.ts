@@ -24,6 +24,7 @@ function task(overrides: Partial<Task>): Task {
     isProject: overrides.isProject ?? false,
     projectId: overrides.projectId ?? null,
     progressNote: overrides.progressNote ?? null,
+    todayFocusOrder: overrides.todayFocusOrder ?? null,
     source: overrides.source ?? null,
     sourceId: overrides.sourceId ?? null,
     createdAt: "2026-05-23T00:00:00.000Z",
